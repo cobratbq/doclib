@@ -13,13 +13,13 @@ import (
 func constructUI(parent fyne.Window, repo *repo.Repo) *fyne.Container {
 	lblStatus := widget.NewLabel("")
 	lblStatus.TextStyle.Italic = true
-	doclist := widget.NewList(repo.Len, func() fyne.CanvasObject {
+	listObjects := widget.NewList(repo.Len, func() fyne.CanvasObject {
 		return widget.NewLabel("new item")
 	}, func(id widget.ListItemID, obj fyne.CanvasObject) {
 		item := obj.(*widget.Label)
 		item.SetText("Hello world")
 	})
-	proplist := widget.NewList(repo.Len, func() fyne.CanvasObject {
+	listProps := widget.NewList(repo.Len, func() fyne.CanvasObject {
 		return container.NewHBox(widget.NewLabel("new property"), widget.NewEntry())
 	}, func(id widget.ListItemID, obj fyne.CanvasObject) {
 	})
@@ -48,7 +48,7 @@ func constructUI(parent fyne.Window, repo *repo.Repo) *fyne.Container {
 			lblStatus.SetText("CHECK: " + err.Error())
 		}
 	})
-	return container.NewBorder(nil, lblStatus, doclist, nil, container.NewVBox(proplist, widget.NewLabel("Testing..."), btnAcquire, btnCheck))
+	return container.NewBorder(nil, lblStatus, listObjects, nil, container.NewVBox(listProps, widget.NewLabel("Testing..."), btnAcquire, btnCheck))
 }
 
 func main() {

@@ -17,9 +17,12 @@ import (
 
 const SUBDIR_REPO = "repo"
 const SUFFIX_PROPERTIES = ".properties"
+const PROP_HASH = "hash"
+const PROP_NAME = "name"
+const SECTION_TITLES = "titles"
 
-func Props() [1]string {
-	return [...]string{"hash"}
+func Props() [2]string {
+	return [...]string{PROP_HASH, PROP_NAME}
 }
 
 func Hash(location string) ([64]byte, error) {
@@ -52,7 +55,8 @@ func (r *Repo) repofile(path string) string {
 
 func OpenRepo(location string) Repo {
 	// TODO move default name to template.properties
-	return Repo{location: location, props: []string{"hash"}}
+	props := Props()
+	return Repo{location: location, props: props[:]}
 }
 
 func (r *Repo) Acquire(location string, name string) error {
@@ -65,8 +69,12 @@ func (r *Repo) Acquire(location string, name string) error {
 	if err = os.Rename(location, r.repofile(checksumhex)); err != nil {
 		return errors.Context(err, "failed to move file to repo")
 	}
-	if err = os.WriteFile(r.repofile(checksumhex+".properties"), []byte("hash=blake2b:"+checksumhex+"\n"+"name="+name+"\n"), 0600); err != nil {
+	if err = os.WriteFile(r.repofile(checksumhex+".properties"), []byte(PROP_HASH+"=blake2b:"+checksumhex+"\n"+PROP_NAME+"="+name+"\n"), 0600); err != nil {
 		return errors.Context(err, "failed to write properties to repo")
+	}
+	if err := os.Symlink(filepath.Join("..", SUBDIR_REPO, checksumhex), filepath.Join(r.location, SECTION_TITLES, name)); err != nil {
+		os.Stderr.WriteString("Error: " + err.Error())
+		return errors.Context(err, "failed to create symlink in titles")
 	}
 	return nil
 }
@@ -84,7 +92,7 @@ func (r *Repo) Check() error {
 	}
 	for _, e := range entries {
 		if !e.Type().IsRegular() {
-			os.Stderr.WriteString(e.Name() + ": not a regular file.")
+			os.Stderr.WriteString(e.Name() + ": not a regular file.\n")
 		}
 		if strings.HasSuffix(e.Name(), SUFFIX_PROPERTIES) {
 			// properties-files are processed in conjuction with the corresponding binary file.
@@ -92,7 +100,25 @@ func (r *Repo) Check() error {
 		}
 		// Checking characteristics of file properties.
 		if info, err := os.Stat(r.repofile(e.Name() + SUFFIX_PROPERTIES)); err != nil || info.Mode()&fs.ModeType != 0 {
-			os.Stderr.WriteString(e.Name() + SUFFIX_PROPERTIES + ": expected a properties-file.")
+			os.Stderr.WriteString(e.Name() + SUFFIX_PROPERTIES + ": expected a properties-file.\n")
+		}
+		if o, err := r.Open(e.Name()); err == nil {
+			if hashspec, ok := o.Props[PROP_HASH]; ok {
+				if classifier, value, ok := strings.Cut(hashspec, ":"); !ok || classifier != "blake2b" || value != e.Name() {
+					os.Stderr.WriteString(e.Name() + ": invalid properties\n")
+				}
+			} else {
+				os.Stderr.WriteString(e.Name() + ": missing 'hash' property.\n")
+			}
+			if objName, ok := o.Props[PROP_NAME]; ok {
+				if stat, err := os.Lstat(filepath.Join(r.location, SECTION_TITLES, objName)); err != nil || stat.Mode()&fs.ModeSymlink == 0 {
+					os.Stderr.WriteString(e.Name() + ": missing symlink in document titles")
+				}
+			} else {
+				os.Stderr.WriteString(e.Name() + ": missing 'name' property.\n")
+			}
+		} else {
+			os.Stderr.WriteString(e.Name() + ": failed to parse properties: " + err.Error() + "\n")
 		}
 	}
 	return nil
@@ -106,6 +132,9 @@ type RepoObj struct {
 func (r *Repo) Open(objname string) (RepoObj, error) {
 	propspath := r.repofile(objname + SUFFIX_PROPERTIES)
 	props, err := bufio_.OpenFileProcessStringLinesFunc(propspath, '\n', func(s string) ([2]string, error) {
+		if len(s) == 0 || strings.HasPrefix(s, "#") {
+			return [2]string{}, bufio_.ErrProcessingIgnore
+		}
 		if key, value, ok := strings.Cut(s, "="); ok {
 			return [...]string{key, value}, nil
 		}
