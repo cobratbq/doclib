@@ -3,6 +3,7 @@ package repo
 import (
 	"bufio"
 	"encoding/hex"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -12,6 +13,8 @@ import (
 	"github.com/cobratbq/goutils/std/builtin"
 	"github.com/cobratbq/goutils/std/errors"
 	io_ "github.com/cobratbq/goutils/std/io"
+	"github.com/cobratbq/goutils/std/log"
+	strings_ "github.com/cobratbq/goutils/std/strings"
 	"golang.org/x/crypto/blake2b"
 )
 
@@ -59,7 +62,9 @@ func OpenRepo(location string) Repo {
 	return Repo{location: location, props: props[:]}
 }
 
+// FIXME perform validation of file name
 func (r *Repo) Acquire(location string, name string) error {
+	// FIXME change to acquire from temporary location by CopyFrom
 	var err error
 	var checksum [64]byte
 	if checksum, err = Hash(location); err != nil {
@@ -73,26 +78,28 @@ func (r *Repo) Acquire(location string, name string) error {
 		return errors.Context(err, "failed to write properties to repo")
 	}
 	if err := os.Symlink(filepath.Join("..", SUBDIR_REPO, checksumhex), filepath.Join(r.location, SECTION_TITLES, name)); err != nil {
-		os.Stderr.WriteString("Error: " + err.Error())
 		return errors.Context(err, "failed to create symlink in titles")
 	}
 	return nil
 }
 
-func (r *Repo) Len() int {
-	return 5
+func (r *Repo) Abort(tempid string) error {
+	// FIXME locate and delete tempid document
+	return errors.ErrFailure
 }
 
 func (r *Repo) Check() error {
 	var entries []os.DirEntry
 	var err error
+
 	if entries, err = os.ReadDir(r.repofile("")); err != nil {
 		// FIXME fine-tune error handling
 		return err
 	}
 	for _, e := range entries {
+		log.Traceln("Processing repo-entry…", e.Name())
 		if !e.Type().IsRegular() {
-			os.Stderr.WriteString(e.Name() + ": not a regular file.\n")
+			log.Infoln(e.Name(), ": not a regular file.")
 		}
 		if strings.HasSuffix(e.Name(), SUFFIX_PROPERTIES) {
 			// properties-files are processed in conjuction with the corresponding binary file.
@@ -100,27 +107,60 @@ func (r *Repo) Check() error {
 		}
 		// Checking characteristics of file properties.
 		if info, err := os.Stat(r.repofile(e.Name() + SUFFIX_PROPERTIES)); err != nil || info.Mode()&fs.ModeType != 0 {
-			os.Stderr.WriteString(e.Name() + SUFFIX_PROPERTIES + ": expected a properties-file.\n")
+			// TODO check if valid '.properties' file, i.e. readable, parsable content.
+			log.Infoln(e.Name()+SUFFIX_PROPERTIES, ": expected a properties-file.")
 		}
 		if o, err := r.Open(e.Name()); err == nil {
 			if hashspec, ok := o.Props[PROP_HASH]; ok {
 				if classifier, value, ok := strings.Cut(hashspec, ":"); !ok || classifier != "blake2b" || value != e.Name() {
-					os.Stderr.WriteString(e.Name() + ": invalid properties\n")
+					log.Infoln(e.Name(), ": invalid properties")
 				}
 			} else {
-				os.Stderr.WriteString(e.Name() + ": missing 'hash' property.\n")
+				log.Infoln(e.Name(), ": missing 'hash' property.")
 			}
 			if objName, ok := o.Props[PROP_NAME]; ok {
 				if stat, err := os.Lstat(filepath.Join(r.location, SECTION_TITLES, objName)); err != nil || stat.Mode()&fs.ModeSymlink == 0 {
-					os.Stderr.WriteString(e.Name() + ": missing symlink in document titles")
+					log.Infoln(e.Name(), ": missing symlink in document titles")
 				}
 			} else {
-				os.Stderr.WriteString(e.Name() + ": missing 'name' property.\n")
+				log.Infoln(e.Name(), ": missing 'name' property.")
 			}
 		} else {
-			os.Stderr.WriteString(e.Name() + ": failed to parse properties: " + err.Error() + "\n")
+			log.Infoln(e.Name(), ": failed to parse properties: ", err.Error())
 		}
 	}
+
+	if entries, err = os.ReadDir(filepath.Join(r.location, SECTION_TITLES)); err != nil {
+		// FIXME fine-tune error handling
+		return err
+	}
+	for _, e := range entries {
+		log.Traceln("Processing titles-entry…", e.Name())
+		path := filepath.Join(r.location, SECTION_TITLES, e.Name())
+		log.Infoln("Path: ", path)
+		if linkpath, err := os.Readlink(path); err == nil {
+			objName := filepath.Base(linkpath)
+			log.Infoln("Source-path: ", objName)
+			if o, err := r.Open(objName); err == nil {
+				if o.Props[PROP_NAME] != e.Name() {
+					log.Traceln("CHECK: titles document name does not match with 'name' property. Renaming…")
+					if err := os.Rename(path, filepath.Join(r.location, SECTION_TITLES, o.Props[PROP_NAME])); err != nil {
+						log.Infoln(e.Name(), ": failed to rename object to proper name: ", err.Error())
+					}
+				}
+			} else {
+				log.Traceln("CHECK: titles document does not correctly link to repo-object. Deleting…")
+				log.Infoln(e.Name(), ": failed to open corresponding repo-object: ", err.Error())
+				if err := os.Remove(path); err != nil {
+					log.Infoln("Failed to delete bad symlink in titles: ", err.Error())
+				}
+			}
+		} else {
+			log.Traceln("Failed to read link for '" + path + "'. Deleting bad link.")
+			log.Infoln(e.Name(), ": failed to query symlink without error: ", err.Error())
+		}
+	}
+	// TODO count errors and report back
 	return nil
 }
 
@@ -129,12 +169,29 @@ type RepoObj struct {
 	Props map[string]string
 }
 
+func (r *Repo) CopyFrom(reader io.Reader) (string, error) {
+	// FIXME copy into repo in temp object.
+	// FIXME rename to repo-obj
+	// FIXME create properties
+	// FIXME return temporary ID to finish up acquisition in Acquire
+	return "", errors.Context(errors.ErrFailure, "Not implemented")
+}
+
+func (r *Repo) Save(obj RepoObj) error {
+	// FIXME save updated properties.
+	// FIXME update symlinks?
+	return errors.Context(errors.ErrFailure, "To be implemented")
+}
+
 func (r *Repo) Open(objname string) (RepoObj, error) {
 	propspath := r.repofile(objname + SUFFIX_PROPERTIES)
 	props, err := bufio_.OpenFileProcessStringLinesFunc(propspath, '\n', func(s string) ([2]string, error) {
-		if len(s) == 0 || strings.HasPrefix(s, "#") {
+		// TODO fine-tuning trimming whitespace for comment-line matching
+		if len(s) == 0 || strings_.AnyPrefix(strings.TrimLeft(s, " \t"), "#", "!") {
 			return [2]string{}, bufio_.ErrProcessingIgnore
 		}
+		// TODO trim whitespacing?
+		// TODO support ':' separator?
 		if key, value, ok := strings.Cut(s, "="); ok {
 			return [...]string{key, value}, nil
 		}
@@ -147,5 +204,26 @@ func (r *Repo) Open(objname string) (RepoObj, error) {
 	for _, p := range props {
 		propmap[p[0]] = p[1]
 	}
+	// TODO check allowed properties? (permit unknown properties?, as forward-compatibility?)
 	return RepoObj{Name: objname, Props: propmap}, nil
+}
+
+func (r *Repo) List() ([]RepoObj, error) {
+	var err error
+	var direntries []os.DirEntry
+	if direntries, err = os.ReadDir(r.repofile("")); err != nil {
+		return nil, errors.Context(err, "failed to open repo-data for listing content")
+	}
+	var objects []RepoObj
+	for _, e := range direntries {
+		if strings.HasSuffix(e.Name(), SUFFIX_PROPERTIES) {
+			continue
+		}
+		if obj, err := r.Open(e.Name()); err == nil {
+			objects = append(objects, obj)
+		} else {
+			log.Infoln("Skipping", e.Name(), ": failed to open repo-object:", err.Error())
+		}
+	}
+	return objects, nil
 }

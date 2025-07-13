@@ -4,55 +4,138 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 	"github.com/cobratbq/doclib/internal/repo"
+	"github.com/cobratbq/goutils/std/builtin"
 	"github.com/cobratbq/goutils/std/errors"
+	io_ "github.com/cobratbq/goutils/std/io"
+	"github.com/cobratbq/goutils/std/log"
 )
 
-func constructUI(parent fyne.Window, repo *repo.Repo) *fyne.Container {
+func queryDocumentName(parent fyne.Window) (string, error) {
+	inputName := widget.NewEntry()
+	// FIXME perform proper validation of file name
+	inputName.Validator = func(s string) error {
+		if len(s) > 0 {
+			return nil
+		}
+		return errors.ErrIllegal
+	}
+	resultChan := make(chan bool, 0)
+	dialog.ShowForm("Object name", "Store", "Cancel", []*widget.FormItem{widget.NewFormItem("Name:", inputName)},
+		func(proceed bool) {
+			log.Traceln("Dialog called with result:", proceed)
+			resultChan <- proceed
+		}, parent)
+	if !<-resultChan {
+		return "", errors.Context(errors.ErrFailure, "Dialog cancelled")
+	}
+	return inputName.Text, nil
+}
+
+func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 	lblStatus := widget.NewLabel("")
 	lblStatus.TextStyle.Italic = true
-	listObjects := widget.NewList(repo.Len, func() fyne.CanvasObject {
-		return widget.NewLabel("new item")
+	repoObjs := builtin.Expect(docrepo.List())
+	// TODO needs smaller font, more suitable theme, or plain (unthemed) widgets.
+	listObjects := widget.NewList(func() int { return len(repoObjs) }, func() fyne.CanvasObject {
+		// note: dictate size with wide initial label text at creation
+		return widget.NewLabel("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
 	}, func(id widget.ListItemID, obj fyne.CanvasObject) {
-		item := obj.(*widget.Label)
-		item.SetText("Hello world")
+		obj.(*widget.Label).SetText(repoObjs[id].Props[repo.PROP_NAME])
 	})
-	listProps := widget.NewList(repo.Len, func() fyne.CanvasObject {
-		return container.NewHBox(widget.NewLabel("new property"), widget.NewEntry())
-	}, func(id widget.ListItemID, obj fyne.CanvasObject) {
+	// TODO now needs to be sync with repo.Props() list
+	interop := struct {
+		id   int
+		hash binding.String
+		name binding.String
+	}{id: -1, hash: binding.NewString(), name: binding.NewString()}
+	lblHash := widget.NewLabel("hash:")
+	lblHashValue := widget.NewLabel("")
+	lblHashValue.Bind(interop.hash)
+	lblName := widget.NewLabel("name:")
+	inputName := widget.NewEntryWithData(interop.name)
+	listObjects.OnSelected = func(id widget.ListItemID) {
+		interop.id = id
+		interop.hash.Set(repoObjs[id].Props[repo.PROP_HASH])
+		interop.name.Set(repoObjs[id].Props[repo.PROP_NAME])
+	}
+	btnUpdate := widget.NewButton("Update", func() {
+		repoObjs[interop.id].Props[repo.PROP_HASH] = builtin.Expect(interop.hash.Get())
+		repoObjs[interop.id].Props[repo.PROP_NAME] = builtin.Expect(interop.name.Get())
+		if err := docrepo.Save(repoObjs[interop.id]); err != nil {
+			lblStatus.SetText("Failed to save updated properties: " + err.Error())
+		}
 	})
 	btnAcquire := widget.NewButton("Acquire", func() {
-		inputName := widget.NewEntry()
-		inputName.Validator = func(s string) error {
-			if len(s) > 0 {
-				return nil
+		resultChan := make(chan string, 1)
+		openDialog := dialog.NewFileOpen(func(reader fyne.URIReadCloser, err error) {
+			if err != nil {
+				log.Traceln("Failed to open file, possibly dialog cancelled: ", err.Error())
+				lblStatus.SetText("Dialog aborted. No file was selected.")
+				return
 			}
-			return errors.ErrIllegal
-		}
-		dialog.ShowForm("Object name", "Store", "Cancel", []*widget.FormItem{widget.NewFormItem("Name:", inputName)}, func(b bool) {
-			// FIXME hardcoded path
-			if err := repo.Acquire("/home/dev-otr/mydocument", inputName.Text); err == nil {
-				lblStatus.SetText("")
+			defer io_.CloseLogged(reader, "Failed to gracefully close file.")
+			log.Warnln("File-dialog:", reader.URI(), err)
+			// FIXME make CopyFrom copy to temporary location, then wait for file to complete acquisition
+			var tempid string
+			if tempid, err = docrepo.CopyFrom(reader); err == nil {
+				log.Traceln("File-dialog successfully completed.")
+				resultChan <- tempid
 			} else {
-				lblStatus.SetText("ACQUIRE: " + err.Error())
+				log.Traceln("Failed to copy document into repository:", err.Error())
+				lblStatus.SetText("Failed to import document into repository: " + err.Error())
 			}
+			close(resultChan)
 		}, parent)
+		// FIXME fine-tune open-file dialog.
+		//openDialog.SetTitleText()
+		openDialog.Show()
+
+		// FIXME abort early if resultchan closed, i.e. failure to copy document
+		var ok bool
+		var tempid string
+		if tempid, ok = <-resultChan; !ok {
+			log.Traceln("Failed to acquire temporary ID for inclusion into repository.")
+			lblStatus.SetText("Failed to acquire temporary ID for document inclusion into repository.")
+			return
+		}
+
+		// Query user for document name.
+		var err error
+		var name string
+		if name, err = queryDocumentName(parent); err != nil {
+			docrepo.Abort(tempid)
+			log.Traceln("Failed to query name for new document:", err.Error())
+			lblStatus.SetText("Failed to query name for new document: " + err.Error())
+			return
+		}
+
+		if err = docrepo.Acquire(tempid, name); err != nil {
+			log.Traceln("Failed to complete acquisition:", err.Error())
+			lblStatus.SetText("Failed to complete acquisition: " + err.Error())
+			return
+		}
+
+		log.Traceln("Document acquired.")
 	})
 	btnCheck := widget.NewButton("Check", func() {
 		// FIXME no error handling
-		if err := repo.Check(); err == nil {
-			lblStatus.SetText("")
+		if err := docrepo.Check(); err == nil {
+			lblStatus.SetText("Check finished without errors.")
 		} else {
-			lblStatus.SetText("CHECK: " + err.Error())
+			lblStatus.SetText("Check finished with errors: " + err.Error())
 		}
 	})
-	return container.NewBorder(nil, lblStatus, listObjects, nil, container.NewVBox(listProps, widget.NewLabel("Testing..."), btnAcquire, btnCheck))
+	return container.NewBorder(nil, lblStatus, nil, nil, container.NewBorder(nil, container.NewHBox(btnAcquire, btnCheck), listObjects, nil, container.New(layout.NewFormLayout(), lblHash, lblHashValue, lblName, inputName, layout.NewSpacer(), btnUpdate)))
 }
 
 func main() {
-	app := app.New()
+	// TODO needs an App ID
+	app := app.NewWithID("NeedsAnAppID")
 
 	docrepo := repo.OpenRepo("./data")
 

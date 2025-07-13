@@ -1,7 +1,7 @@
 SUFFIXES :=
 MAKEFLAGS += --no-builtin-rules --no-builtin-variables
 
-BUILDARGS := -tags gles
+BUILDARGS := -tags gles,tracelog
 
 .PHONY: clean build run
 
