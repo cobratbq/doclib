@@ -55,10 +55,14 @@ func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 		name binding.String
 	}{id: -1, hash: binding.NewString(), name: binding.NewString()}
 	lblHash := widget.NewLabel("hash:")
+	lblHash.TextStyle.Italic = true
 	lblHashValue := widget.NewLabel("")
 	lblHashValue.Bind(interop.hash)
+	lblHashValue.Truncation = fyne.TextTruncateEllipsis
 	lblName := widget.NewLabel("name:")
+	lblName.TextStyle.Italic = true
 	inputName := widget.NewEntryWithData(interop.name)
+	inputName.Scroll = fyne.ScrollHorizontalOnly
 	listObjects.OnSelected = func(id widget.ListItemID) {
 		interop.id = id
 		interop.hash.Set(repoObjs[id].Props[repo.PROP_HASH])
@@ -105,7 +109,7 @@ func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 			lblStatus.SetText("Check finished with errors: " + err.Error())
 		}
 	})
-	return container.NewBorder(nil, lblStatus, nil, nil, container.NewBorder(nil, container.NewHBox(btnAcquire, btnCheck), listObjects, nil, container.New(layout.NewFormLayout(), lblHash, lblHashValue, lblName, inputName, layout.NewSpacer(), btnUpdate)))
+	return container.NewBorder(nil, lblStatus, nil, nil, container.NewBorder(nil, container.NewHBox(btnAcquire, btnCheck), listObjects, nil, container.New(layout.NewFormLayout(), lblHash, lblHashValue, lblName, inputName, layout.NewSpacer(), container.NewBorder(nil, nil, nil, btnUpdate, nil))))
 }
 
 func main() {

@@ -84,86 +84,88 @@ func (r *Repo) Check() error {
 	var err error
 
 	if entries, err = os.ReadDir(r.repofilepath("")); err != nil {
-		// FIXME fine-tune error handling
-		return err
+		return errors.Context(err, "failed to open object-repository directory")
 	}
 	for _, e := range entries {
 		log.Traceln("Processing repo-entry…", e.Name())
 		if !e.Type().IsRegular() {
 			log.Infoln(e.Name(), ": not a regular file.")
+			continue
 		}
 		if strings.HasSuffix(e.Name(), SUFFIX_PROPERTIES) {
 			// properties-files are processed in conjuction with the corresponding binary file.
 			if !os_.ExistsFile(r.repofilepath(strings.TrimSuffix(e.Name(), SUFFIX_PROPERTIES))) {
-				log.Infoln("Encountered properties-file without corresponding object binary:", e.Name())
-				// FIXME remove this file?
+				log.Infoln("Encountered properties-file without corresponding object-binary:", e.Name())
+				if err := os.Remove(r.repofilepath(e.Name())); err != nil {
+					log.Warnln("Failed to remove stray properties-file '"+e.Name()+"' from repository:", err.Error())
+				} else {
+					log.Traceln("Removed stray properties-file:", e.Name())
+				}
 			}
 			continue
 		}
 		if strings.HasPrefix(e.Name(), PREFIX_TEMPREPOFILE) {
-			if err = os.Remove(r.repofilepath(e.Name())); err == nil {
-				log.Traceln("Removed temporary file:", e.Name())
+			if err = os.Remove(r.repofilepath(e.Name())); err != nil {
+				log.Warnln("Failed to remove old temporary file '"+e.Name()+"':", err.Error())
 			} else {
-				log.Infoln("Failed to remove old temporary file '"+e.Name()+"':", err.Error())
+				log.Traceln("Removed temporary file:", e.Name())
 			}
 			continue
 		}
 		if checksum, err := hash_.HashFile(builtin.Expect(blake2b.New512(nil)), r.repofilepath(e.Name())); err != nil {
-			log.Infoln("Failed to checksum repo-object:", hex.EncodeToString(checksum))
-			continue
+			log.Warnln("Failed to checksum repo-object:", hex.EncodeToString(checksum))
 		} else if e.Name() != hex.EncodeToString(checksum) {
-			log.Infoln("Repo-object '"+e.Name()+"': checksum does not match:", hex.EncodeToString(checksum))
-			// FIXME what to message: corruption? allow renaming? (don't forget corresponding properties)
-			continue
+			log.Warnln("Repo-object '"+e.Name()+"': checksum does not match:", hex.EncodeToString(checksum))
 		}
 		// FIXME check for duplicate names, i.e. some documents might not show up when symlinking by duplicate names.
 		// Checking characteristics of file properties.
 		if !os_.ExistsFile(r.repofilepath(e.Name() + SUFFIX_PROPERTIES)) {
-			// TODO check if valid '.properties' file, i.e. readable, parsable content.
-			log.Infoln(e.Name()+SUFFIX_PROPERTIES, ": expected a properties-file.")
+			log.Warnln(e.Name()+SUFFIX_PROPERTIES, ": missing properties-file.")
 		}
 		if o, err := r.Open(e.Name()); err != nil {
-			log.Infoln(e.Name(), ": failed to parse properties: ", err.Error())
+			log.Warnln(e.Name(), ": failed to parse properties: ", err.Error())
 		} else {
 			if hashspec, ok := o.Props[PROP_HASH]; !ok {
-				log.Infoln(e.Name(), ": missing 'hash' property.")
+				log.Warnln(e.Name(), ": missing 'hash'-property.")
 			} else if classifier, value, ok := strings.Cut(hashspec, ":"); !ok || classifier != "blake2b" || value != e.Name() {
-				log.Infoln(e.Name(), ": invalid properties")
+				log.Warnln(e.Name(), ": invalid properties", e.Name(), value)
 			}
 			if name, ok := o.Props[PROP_NAME]; !ok {
-				log.Infoln(e.Name(), ": missing 'name' property.")
+				log.Warnln(e.Name(), ": missing 'name' property.")
 			} else if !os_.ExistsIsSymlink(filepath.Join(r.location, SECTION_TITLES, name)) {
+				// Create symlink when one does not exist under the correct name as stated in the properties.
+				// Next we will remove symlinks that refer to repo-objects that have a different name-prop.
 				if err := os.Symlink(filepath.Join("..", SUBDIR_REPO, e.Name()), filepath.Join(r.location, SECTION_TITLES, name)); err != nil {
-					log.Infoln(e.Name(), ": failed to create symlink at expected location:", err.Error())
+					log.Warnln(e.Name(), ": failed to create symlink at expected location:", err.Error())
 				} else {
-					log.Infoln(e.Name(), ": missing symlink in document titles recreated.")
+					log.Traceln(e.Name(), ": missing symlink in document titles recreated.")
 				}
 			}
 		}
 	}
 
 	if entries, err = os.ReadDir(filepath.Join(r.location, SECTION_TITLES)); err != nil {
-		// FIXME fine-tune error handling
-		return err
+		return errors.Context(err, "failed to open directory with titles links")
 	}
 	for _, e := range entries {
 		log.Traceln("Processing titles-entry…", e.Name())
 		path := filepath.Join(r.location, SECTION_TITLES, e.Name())
-		log.Infoln("Path: ", path)
+		log.Infoln("Path:", path)
 		if linkpath, err := os.Readlink(path); err != nil {
 			log.Traceln("Failed to read link for '" + path + "'. Deleting bad link.")
 			log.Infoln(e.Name(), ": failed to query symlink without error: ", err.Error())
-		} else if o, err := r.Open(filepath.Base(linkpath)); err != nil {
+		} else if obj, err := r.Open(filepath.Base(linkpath)); err != nil {
 			log.Infoln("Source-path: ", linkpath)
 			log.Traceln("CHECK: titles document does not correctly link to repo-object. Deleting…")
 			log.Infoln(e.Name(), ": failed to open corresponding repo-object: ", err.Error())
 			if err := os.Remove(path); err != nil {
 				log.Infoln("Failed to delete bad symlink in titles: ", err.Error())
 			}
-		} else if o.Props[PROP_NAME] != e.Name() {
+		} else if obj.Props[PROP_NAME] != e.Name() {
 			log.Traceln("CHECK: titles document name does not match with 'name' property. Renaming…")
-			// FIXME check for symlink targets and if target does not match names, correct/remove? (We also make new symlinks if one does not exist for PROP_NAME)
-			if err := os.Rename(path, filepath.Join(r.location, SECTION_TITLES, o.Props[PROP_NAME])); err != nil {
+			if err := os.Remove(path); err != nil {
+				// Previously, we created symlinks when they don't exist at expected name. Now we remove
+				// existing symlinks which refer to repo-objects with a different name.
 				log.Infoln(e.Name(), ": failed to rename object to proper name: ", err.Error())
 			}
 		}
@@ -172,8 +174,8 @@ func (r *Repo) Check() error {
 	return nil
 }
 
-func (r *Repo) writeProperties(objname, checksumhex, name string) error {
-	return os.WriteFile(r.repofilepath(objname)+SUFFIX_PROPERTIES, []byte(PROP_HASH+"=blake2b:"+checksumhex+"\n"+PROP_NAME+"="+name+"\n"), 0600)
+func (r *Repo) writeProperties(objname, hashspec, name string) error {
+	return os.WriteFile(r.repofilepath(objname)+SUFFIX_PROPERTIES, []byte(PROP_HASH+"="+hashspec+"\n"+PROP_NAME+"="+name+"\n"), 0600)
 }
 
 type RepoObj struct {
@@ -198,7 +200,7 @@ func (r *Repo) Acquire(reader io.Reader, name string) (RepoObj, error) {
 	if err := os.Rename(tempfname, r.repofilepath(checksumhex)); err != nil {
 		return RepoObj{}, errors.Context(err, "failed to move temporary file '"+tempfname+"' to definite repo-object location '"+checksumhex+"'")
 	}
-	if err := r.writeProperties(checksumhex, checksumhex, name); err != nil {
+	if err := r.writeProperties(checksumhex, "blake2b:"+checksumhex, name); err != nil {
 		return RepoObj{}, errors.Context(err, "failed to write properties-file")
 	}
 	// FIXME get RepoObj instance from writeProperties, instead of going through Open?
