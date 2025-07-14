@@ -19,6 +19,7 @@ import (
 )
 
 const SUBDIR_REPO = "repo"
+const PREFIX_TEMPREPOFILE = "temp--"
 const SUFFIX_PROPERTIES = ".properties"
 const PROP_HASH = "hash"
 const PROP_NAME = "name"
@@ -49,38 +50,27 @@ type Repo struct {
 	props    []string
 }
 
-func (r *Repo) repofile(path string) string {
+func (r *Repo) repofilepath(path string) string {
 	if path == "" || path == "." {
 		return filepath.Join(r.location, SUBDIR_REPO)
 	}
 	return filepath.Join(r.location, SUBDIR_REPO, path)
 }
 
+func (r *Repo) temprepofile() (*os.File, string, error) {
+	var err error
+	var tempf *os.File
+	path := r.repofilepath("")
+	if tempf, err = os.CreateTemp(path, PREFIX_TEMPREPOFILE); err != nil {
+		return nil, "", errors.Context(err, "failed to create temp file for acquisition")
+	}
+	return tempf, tempf.Name(), nil
+}
+
 func OpenRepo(location string) Repo {
 	// TODO move default name to template.properties
 	props := Props()
 	return Repo{location: location, props: props[:]}
-}
-
-// FIXME perform validation of file name
-func (r *Repo) Acquire(location string, name string) error {
-	// FIXME change to acquire from temporary location by CopyFrom
-	var err error
-	var checksum [64]byte
-	if checksum, err = Hash(location); err != nil {
-		return errors.Context(err, "failed to hash document contents")
-	}
-	checksumhex := hex.EncodeToString(checksum[:])
-	if err = os.Rename(location, r.repofile(checksumhex)); err != nil {
-		return errors.Context(err, "failed to move file to repo")
-	}
-	if err = os.WriteFile(r.repofile(checksumhex+".properties"), []byte(PROP_HASH+"=blake2b:"+checksumhex+"\n"+PROP_NAME+"="+name+"\n"), 0600); err != nil {
-		return errors.Context(err, "failed to write properties to repo")
-	}
-	if err := os.Symlink(filepath.Join("..", SUBDIR_REPO, checksumhex), filepath.Join(r.location, SECTION_TITLES, name)); err != nil {
-		return errors.Context(err, "failed to create symlink in titles")
-	}
-	return nil
 }
 
 func (r *Repo) Abort(tempid string) error {
@@ -92,7 +82,7 @@ func (r *Repo) Check() error {
 	var entries []os.DirEntry
 	var err error
 
-	if entries, err = os.ReadDir(r.repofile("")); err != nil {
+	if entries, err = os.ReadDir(r.repofilepath("")); err != nil {
 		// FIXME fine-tune error handling
 		return err
 	}
@@ -105,8 +95,16 @@ func (r *Repo) Check() error {
 			// properties-files are processed in conjuction with the corresponding binary file.
 			continue
 		}
+		if strings.HasPrefix(e.Name(), PREFIX_TEMPREPOFILE) {
+			if os.Remove(r.repofilepath(e.Name())); err != nil {
+				log.Infoln("Failed to remove old temporary file:", e.Name())
+			}
+			continue
+		}
+		// FIXME check for duplicate names, i.e. some documents won't show up when symlinking by name.
+		// FIXME checksum file contents and compare hex(hash) with filename
 		// Checking characteristics of file properties.
-		if info, err := os.Stat(r.repofile(e.Name() + SUFFIX_PROPERTIES)); err != nil || info.Mode()&fs.ModeType != 0 {
+		if info, err := os.Stat(r.repofilepath(e.Name() + SUFFIX_PROPERTIES)); err != nil || info.Mode()&fs.ModeType != 0 {
 			// TODO check if valid '.properties' file, i.e. readable, parsable content.
 			log.Infoln(e.Name()+SUFFIX_PROPERTIES, ": expected a properties-file.")
 		}
@@ -164,17 +162,41 @@ func (r *Repo) Check() error {
 	return nil
 }
 
+func (r *Repo) writeProperties(filename, checksumhex, name string) error {
+	return os.WriteFile(filename+SUFFIX_PROPERTIES, []byte(PROP_HASH+"=blake2b:"+checksumhex+"\n"+PROP_NAME+"="+name), 0600)
+}
+
 type RepoObj struct {
 	Name  string
 	Props map[string]string
 }
 
-func (r *Repo) CopyFrom(reader io.Reader) (string, error) {
-	// FIXME copy into repo in temp object.
-	// FIXME rename to repo-obj
-	// FIXME create properties
-	// FIXME return temporary ID to finish up acquisition in Acquire
-	return "", errors.Context(errors.ErrFailure, "Not implemented")
+func (r *Repo) Acquire(reader io.Reader, name string) (RepoObj, error) {
+	tempf, tempfname, err := r.temprepofile()
+	if err != nil {
+		return RepoObj{}, errors.Context(err, "failed to create temporary file for storing content in repo")
+	}
+	defer io_.CloseLogged(tempf, "Failed to gracefully close temporary file")
+	log.Traceln("Tempf:", tempfname)
+	fhash := builtin.Expect(blake2b.New512(nil))
+	if _, err := io.Copy(io.MultiWriter(tempf, fhash), reader); err != nil {
+		return RepoObj{}, errors.Context(err, "error while copying contents into repository")
+	}
+	checksumhex := hex.EncodeToString(fhash.Sum(nil))
+	log.Traceln("checksum:", checksumhex)
+	destname := r.repofilepath(checksumhex)
+	if err := os.Rename(tempfname, destname); err != nil {
+		return RepoObj{}, errors.Context(err, "failed to move temporary file '"+tempfname+"' to definite location '"+destname+"'")
+	}
+	if err := r.writeProperties(destname, checksumhex, name); err != nil {
+		return RepoObj{}, errors.Context(err, "failed to write properties-file")
+	}
+	// FIXME get RepoObj instance from writeProperties, instead of going through Open?
+	return r.Open(checksumhex)
+	// FIXME where to start symlinking the repo content?
+	//if err := os.Symlink(filepath.Join("..", SUBDIR_REPO, checksumhex), filepath.Join(r.location, SECTION_TITLES, name)); err != nil {
+	//	return errors.Context(err, "failed to create symlink in titles")
+	//}
 }
 
 func (r *Repo) Save(obj RepoObj) error {
@@ -184,7 +206,7 @@ func (r *Repo) Save(obj RepoObj) error {
 }
 
 func (r *Repo) Open(objname string) (RepoObj, error) {
-	propspath := r.repofile(objname + SUFFIX_PROPERTIES)
+	propspath := r.repofilepath(objname + SUFFIX_PROPERTIES)
 	props, err := bufio_.OpenFileProcessStringLinesFunc(propspath, '\n', func(s string) ([2]string, error) {
 		// TODO fine-tuning trimming whitespace for comment-line matching
 		if len(s) == 0 || strings_.AnyPrefix(strings.TrimLeft(s, " \t"), "#", "!") {
@@ -211,7 +233,7 @@ func (r *Repo) Open(objname string) (RepoObj, error) {
 func (r *Repo) List() ([]RepoObj, error) {
 	var err error
 	var direntries []os.DirEntry
-	if direntries, err = os.ReadDir(r.repofile("")); err != nil {
+	if direntries, err = os.ReadDir(r.repofilepath("")); err != nil {
 		return nil, errors.Context(err, "failed to open repo-data for listing content")
 	}
 	var objects []RepoObj

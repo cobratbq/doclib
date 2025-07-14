@@ -39,6 +39,7 @@ func queryDocumentName(parent fyne.Window) (string, error) {
 func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 	lblStatus := widget.NewLabel("")
 	lblStatus.TextStyle.Italic = true
+	lblStatus.Truncation = fyne.TextTruncateEllipsis
 	repoObjs := builtin.Expect(docrepo.List())
 	// TODO needs smaller font, more suitable theme, or plain (unthemed) widgets.
 	listObjects := widget.NewList(func() int { return len(repoObjs) }, func() fyne.CanvasObject {
@@ -71,7 +72,6 @@ func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 		}
 	})
 	btnAcquire := widget.NewButton("Acquire", func() {
-		resultChan := make(chan string, 1)
 		openDialog := dialog.NewFileOpen(func(reader fyne.URIReadCloser, err error) {
 			if err != nil {
 				log.Traceln("Failed to open file, possibly dialog cancelled: ", err.Error())
@@ -81,44 +81,19 @@ func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 			defer io_.CloseLogged(reader, "Failed to gracefully close file.")
 			log.Warnln("File-dialog:", reader.URI(), err)
 			// FIXME make CopyFrom copy to temporary location, then wait for file to complete acquisition
-			var tempid string
-			if tempid, err = docrepo.CopyFrom(reader); err == nil {
+			if _, err = docrepo.Acquire(reader, reader.URI().Name()); err == nil {
 				log.Traceln("File-dialog successfully completed.")
-				resultChan <- tempid
 			} else {
 				log.Traceln("Failed to copy document into repository:", err.Error())
 				lblStatus.SetText("Failed to import document into repository: " + err.Error())
 			}
-			close(resultChan)
 		}, parent)
 		// FIXME fine-tune open-file dialog.
 		//openDialog.SetTitleText()
 		openDialog.Show()
+		listObjects.Refresh()
 
-		// FIXME abort early if resultchan closed, i.e. failure to copy document
-		var ok bool
-		var tempid string
-		if tempid, ok = <-resultChan; !ok {
-			log.Traceln("Failed to acquire temporary ID for inclusion into repository.")
-			lblStatus.SetText("Failed to acquire temporary ID for document inclusion into repository.")
-			return
-		}
-
-		// Query user for document name.
-		var err error
-		var name string
-		if name, err = queryDocumentName(parent); err != nil {
-			docrepo.Abort(tempid)
-			log.Traceln("Failed to query name for new document:", err.Error())
-			lblStatus.SetText("Failed to query name for new document: " + err.Error())
-			return
-		}
-
-		if err = docrepo.Acquire(tempid, name); err != nil {
-			log.Traceln("Failed to complete acquisition:", err.Error())
-			lblStatus.SetText("Failed to complete acquisition: " + err.Error())
-			return
-		}
+		// FIXME WIP, continue with multi-step document acquisition ...
 
 		log.Traceln("Document acquired.")
 	})
