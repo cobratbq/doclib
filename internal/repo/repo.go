@@ -128,10 +128,14 @@ func (r *Repo) Check() error {
 			} else if classifier, value, ok := strings.Cut(hashspec, ":"); !ok || classifier != "blake2b" || value != e.Name() {
 				log.Infoln(e.Name(), ": invalid properties")
 			}
-			if objName, ok := o.Props[PROP_NAME]; !ok {
+			if name, ok := o.Props[PROP_NAME]; !ok {
 				log.Infoln(e.Name(), ": missing 'name' property.")
-			} else if !os_.ExistsIsSymlink(filepath.Join(r.location, SECTION_TITLES, objName)) {
-				log.Infoln(e.Name(), ": missing symlink in document titles")
+			} else if !os_.ExistsIsSymlink(filepath.Join(r.location, SECTION_TITLES, name)) {
+				if err := os.Symlink(filepath.Join("..", SUBDIR_REPO, e.Name()), filepath.Join(r.location, SECTION_TITLES, name)); err != nil {
+					log.Infoln(e.Name(), ": failed to create symlink at expected location:", err.Error())
+				} else {
+					log.Infoln(e.Name(), ": missing symlink in document titles recreated.")
+				}
 			}
 		} else {
 			log.Infoln(e.Name(), ": failed to parse properties: ", err.Error())
@@ -152,6 +156,7 @@ func (r *Repo) Check() error {
 			if o, err := r.Open(objName); err == nil {
 				if o.Props[PROP_NAME] != e.Name() {
 					log.Traceln("CHECK: titles document name does not match with 'name' property. Renaming…")
+					// FIXME check for symlink targets and if target does not match names, correct/remove? (We also make new symlinks if one does not exist for PROP_NAME)
 					if err := os.Rename(path, filepath.Join(r.location, SECTION_TITLES, o.Props[PROP_NAME])); err != nil {
 						log.Infoln(e.Name(), ": failed to rename object to proper name: ", err.Error())
 					}
@@ -172,8 +177,8 @@ func (r *Repo) Check() error {
 	return nil
 }
 
-func (r *Repo) WriteProperties(objname, checksumhex, name string) error {
-	return os.WriteFile(r.repofilepath(objname)+SUFFIX_PROPERTIES, []byte(PROP_HASH+"=blake2b:"+checksumhex+"\n"+PROP_NAME+"="+name), 0600)
+func (r *Repo) writeProperties(objname, checksumhex, name string) error {
+	return os.WriteFile(r.repofilepath(objname)+SUFFIX_PROPERTIES, []byte(PROP_HASH+"=blake2b:"+checksumhex+"\n"+PROP_NAME+"="+name+"\n"), 0600)
 }
 
 type RepoObj struct {
@@ -198,7 +203,7 @@ func (r *Repo) Acquire(reader io.Reader, name string) (RepoObj, error) {
 	if err := os.Rename(tempfname, r.repofilepath(checksumhex)); err != nil {
 		return RepoObj{}, errors.Context(err, "failed to move temporary file '"+tempfname+"' to definite repo-object location '"+checksumhex+"'")
 	}
-	if err := r.WriteProperties(checksumhex, checksumhex, name); err != nil {
+	if err := r.writeProperties(checksumhex, checksumhex, name); err != nil {
 		return RepoObj{}, errors.Context(err, "failed to write properties-file")
 	}
 	// FIXME get RepoObj instance from writeProperties, instead of going through Open?
@@ -210,9 +215,10 @@ func (r *Repo) Acquire(reader io.Reader, name string) (RepoObj, error) {
 	//}
 }
 
+// Save saves updated repo-object properties to the repository.
 func (r *Repo) Save(obj RepoObj) error {
 	// FIXME update symlinks?
-	return r.WriteProperties(obj.Name, obj.Props[PROP_HASH], obj.Props[PROP_NAME])
+	return r.writeProperties(obj.Name, obj.Props[PROP_HASH], obj.Props[PROP_NAME])
 }
 
 func (r *Repo) Open(objname string) (RepoObj, error) {
