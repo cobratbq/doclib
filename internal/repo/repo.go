@@ -211,9 +211,8 @@ func (r *Repo) Acquire(reader io.Reader, name string) (RepoObj, error) {
 }
 
 func (r *Repo) Save(obj RepoObj) error {
-	// FIXME save updated properties.
 	// FIXME update symlinks?
-	return errors.Context(errors.ErrFailure, "To be implemented")
+	return r.WriteProperties(obj.Name, obj.Props[PROP_HASH], obj.Props[PROP_NAME])
 }
 
 func (r *Repo) Open(objname string) (RepoObj, error) {
