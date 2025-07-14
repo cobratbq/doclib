@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"encoding/hex"
 	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,6 +14,7 @@ import (
 	hash_ "github.com/cobratbq/goutils/std/hash"
 	io_ "github.com/cobratbq/goutils/std/io"
 	"github.com/cobratbq/goutils/std/log"
+	os_ "github.com/cobratbq/goutils/std/os"
 	strings_ "github.com/cobratbq/goutils/std/strings"
 	"golang.org/x/crypto/blake2b"
 )
@@ -94,6 +94,10 @@ func (r *Repo) Check() error {
 		}
 		if strings.HasSuffix(e.Name(), SUFFIX_PROPERTIES) {
 			// properties-files are processed in conjuction with the corresponding binary file.
+			if !os_.ExistsFile(r.repofilepath(strings.TrimSuffix(e.Name(), SUFFIX_PROPERTIES))) {
+				log.Infoln("Encountered properties-file without corresponding object binary:", e.Name())
+				// FIXME remove this file?
+			}
 			continue
 		}
 		if strings.HasPrefix(e.Name(), PREFIX_TEMPREPOFILE) {
@@ -108,29 +112,26 @@ func (r *Repo) Check() error {
 			log.Infoln("Failed to checksum repo-object:", hex.EncodeToString(checksum))
 			continue
 		} else if e.Name() != hex.EncodeToString(checksum) {
-			log.Infoln("Checksum of repo-object does not match with object name:", e.Name(), hex.EncodeToString(checksum))
+			log.Infoln("Repo-object '"+e.Name()+"': checksum does not match:", hex.EncodeToString(checksum))
+			// FIXME what to message: corruption? allow renaming? (don't forget corresponding properties)
 			continue
 		}
-		// FIXME check for duplicate names, i.e. some documents won't show up when symlinking by name.
+		// FIXME check for duplicate names, i.e. some documents might not show up when symlinking by duplicate names.
 		// Checking characteristics of file properties.
-		if info, err := os.Stat(r.repofilepath(e.Name() + SUFFIX_PROPERTIES)); err != nil || info.Mode()&fs.ModeType != 0 {
+		if !os_.ExistsFile(r.repofilepath(e.Name() + SUFFIX_PROPERTIES)) {
 			// TODO check if valid '.properties' file, i.e. readable, parsable content.
 			log.Infoln(e.Name()+SUFFIX_PROPERTIES, ": expected a properties-file.")
 		}
 		if o, err := r.Open(e.Name()); err == nil {
-			if hashspec, ok := o.Props[PROP_HASH]; ok {
-				if classifier, value, ok := strings.Cut(hashspec, ":"); !ok || classifier != "blake2b" || value != e.Name() {
-					log.Infoln(e.Name(), ": invalid properties")
-				}
-			} else {
+			if hashspec, ok := o.Props[PROP_HASH]; !ok {
 				log.Infoln(e.Name(), ": missing 'hash' property.")
+			} else if classifier, value, ok := strings.Cut(hashspec, ":"); !ok || classifier != "blake2b" || value != e.Name() {
+				log.Infoln(e.Name(), ": invalid properties")
 			}
-			if objName, ok := o.Props[PROP_NAME]; ok {
-				if stat, err := os.Lstat(filepath.Join(r.location, SECTION_TITLES, objName)); err != nil || stat.Mode()&fs.ModeSymlink == 0 {
-					log.Infoln(e.Name(), ": missing symlink in document titles")
-				}
-			} else {
+			if objName, ok := o.Props[PROP_NAME]; !ok {
 				log.Infoln(e.Name(), ": missing 'name' property.")
+			} else if !os_.ExistsIsSymlink(filepath.Join(r.location, SECTION_TITLES, objName)) {
+				log.Infoln(e.Name(), ": missing symlink in document titles")
 			}
 		} else {
 			log.Infoln(e.Name(), ": failed to parse properties: ", err.Error())
