@@ -20,7 +20,7 @@ import (
 )
 
 const SUBDIR_REPO = "repo"
-const PREFIX_TEMPREPOFILE = "temp--"
+const PREFIX_REPO_TEMP = "temp--"
 const SUFFIX_PROPERTIES = ".properties"
 const PROP_HASH = "hash"
 const PROP_NAME = "name"
@@ -62,7 +62,7 @@ func (r *Repo) temprepofile() (*os.File, string, error) {
 	var err error
 	var tempf *os.File
 	path := r.repofilepath("")
-	if tempf, err = os.CreateTemp(path, PREFIX_TEMPREPOFILE); err != nil {
+	if tempf, err = os.CreateTemp(path, PREFIX_REPO_TEMP); err != nil {
 		return nil, "", errors.Context(err, "failed to create temp file for acquisition")
 	}
 	return tempf, tempf.Name(), nil
@@ -82,6 +82,9 @@ func (r *Repo) Abort(tempid string) error {
 func (r *Repo) Check() error {
 	var entries []os.DirEntry
 	var err error
+
+	log.Infoln("Starting repository check…")
+	defer log.Infoln("Completed repository check.")
 
 	if entries, err = os.ReadDir(r.repofilepath("")); err != nil {
 		return errors.Context(err, "failed to open object-repository directory")
@@ -104,7 +107,7 @@ func (r *Repo) Check() error {
 			}
 			continue
 		}
-		if strings.HasPrefix(e.Name(), PREFIX_TEMPREPOFILE) {
+		if strings.HasPrefix(e.Name(), PREFIX_REPO_TEMP) {
 			if err = os.Remove(r.repofilepath(e.Name())); err != nil {
 				log.Warnln("Failed to remove old temporary file '"+e.Name()+"':", err.Error())
 			} else {
@@ -113,9 +116,9 @@ func (r *Repo) Check() error {
 			continue
 		}
 		if checksum, err := hash_.HashFile(builtin.Expect(blake2b.New512(nil)), r.repofilepath(e.Name())); err != nil {
-			log.Warnln("Failed to checksum repo-object:", hex.EncodeToString(checksum))
+			log.Warnln("Failed to hash repo-object:", hex.EncodeToString(checksum))
 		} else if e.Name() != hex.EncodeToString(checksum) {
-			log.Warnln("Repo-object '"+e.Name()+"': checksum does not match:", hex.EncodeToString(checksum))
+			log.Warnln("Repo-object '" + e.Name() + "': checksum does not match. Possible corruption. (checksum: " + hex.EncodeToString(checksum) + ")")
 		}
 		// FIXME check for duplicate names, i.e. some documents might not show up when symlinking by duplicate names.
 		// Checking characteristics of file properties.
@@ -150,23 +153,19 @@ func (r *Repo) Check() error {
 	for _, e := range entries {
 		log.Traceln("Processing titles-entry…", e.Name())
 		path := filepath.Join(r.location, SECTION_TITLES, e.Name())
-		log.Infoln("Path:", path)
 		if linkpath, err := os.Readlink(path); err != nil {
-			log.Traceln("Failed to read link for '" + path + "'. Deleting bad link.")
-			log.Infoln(e.Name(), ": failed to query symlink without error: ", err.Error())
+			log.Warnln(e.Name(), ": failed to query symlink without error:", err.Error())
 		} else if obj, err := r.Open(filepath.Base(linkpath)); err != nil {
-			log.Infoln("Source-path: ", linkpath)
-			log.Traceln("CHECK: titles document does not correctly link to repo-object. Deleting…")
-			log.Infoln(e.Name(), ": failed to open corresponding repo-object: ", err.Error())
+			log.Traceln("titles symlink does not correctly link to repo-object. Deleting…")
 			if err := os.Remove(path); err != nil {
-				log.Infoln("Failed to delete bad symlink in titles: ", err.Error())
+				log.Warnln("Failed to delete bad symlink in titles:", err.Error())
 			}
 		} else if obj.Props[PROP_NAME] != e.Name() {
-			log.Traceln("CHECK: titles document name does not match with 'name' property. Renaming…")
+			log.Traceln("titles document name does not match with 'name' property. Removing…")
 			if err := os.Remove(path); err != nil {
 				// Previously, we created symlinks when they don't exist at expected name. Now we remove
 				// existing symlinks which refer to repo-objects with a different name.
-				log.Infoln(e.Name(), ": failed to rename object to proper name: ", err.Error())
+				log.Warnln(e.Name(), ": failed to rename object to proper name:", err.Error())
 			}
 		}
 	}
