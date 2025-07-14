@@ -54,7 +54,7 @@ func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 		}
 	})
 	btnAcquire := widget.NewButton("Acquire", func() {
-		openDialog := dialog.NewFileOpen(func(reader fyne.URIReadCloser, err error) {
+		importDialog := dialog.NewFileOpen(func(reader fyne.URIReadCloser, err error) {
 			if err != nil {
 				log.Warnln("Error opening file-dialog: ", err.Error())
 				lblStatus.SetText("File-dialog failed.")
@@ -75,9 +75,9 @@ func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 			listObjects.Refresh()
 			log.Traceln("Document import completed.")
 		}, parent)
-		// FIXME fine-tune open-file dialog.
-		openDialog.SetTitleText("Document for import")
-		openDialog.Show()
+		importDialog.SetConfirmText("Import")
+		importDialog.SetTitleText("Import document into ")
+		importDialog.Show()
 	})
 	btnCheck := widget.NewButton("Check", func() {
 		// FIXME no error handling
