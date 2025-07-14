@@ -122,7 +122,9 @@ func (r *Repo) Check() error {
 			// TODO check if valid '.properties' file, i.e. readable, parsable content.
 			log.Infoln(e.Name()+SUFFIX_PROPERTIES, ": expected a properties-file.")
 		}
-		if o, err := r.Open(e.Name()); err == nil {
+		if o, err := r.Open(e.Name()); err != nil {
+			log.Infoln(e.Name(), ": failed to parse properties: ", err.Error())
+		} else {
 			if hashspec, ok := o.Props[PROP_HASH]; !ok {
 				log.Infoln(e.Name(), ": missing 'hash' property.")
 			} else if classifier, value, ok := strings.Cut(hashspec, ":"); !ok || classifier != "blake2b" || value != e.Name() {
@@ -137,8 +139,6 @@ func (r *Repo) Check() error {
 					log.Infoln(e.Name(), ": missing symlink in document titles recreated.")
 				}
 			}
-		} else {
-			log.Infoln(e.Name(), ": failed to parse properties: ", err.Error())
 		}
 	}
 
@@ -150,27 +150,22 @@ func (r *Repo) Check() error {
 		log.Traceln("Processing titles-entry…", e.Name())
 		path := filepath.Join(r.location, SECTION_TITLES, e.Name())
 		log.Infoln("Path: ", path)
-		if linkpath, err := os.Readlink(path); err == nil {
-			objName := filepath.Base(linkpath)
-			log.Infoln("Source-path: ", objName)
-			if o, err := r.Open(objName); err == nil {
-				if o.Props[PROP_NAME] != e.Name() {
-					log.Traceln("CHECK: titles document name does not match with 'name' property. Renaming…")
-					// FIXME check for symlink targets and if target does not match names, correct/remove? (We also make new symlinks if one does not exist for PROP_NAME)
-					if err := os.Rename(path, filepath.Join(r.location, SECTION_TITLES, o.Props[PROP_NAME])); err != nil {
-						log.Infoln(e.Name(), ": failed to rename object to proper name: ", err.Error())
-					}
-				}
-			} else {
-				log.Traceln("CHECK: titles document does not correctly link to repo-object. Deleting…")
-				log.Infoln(e.Name(), ": failed to open corresponding repo-object: ", err.Error())
-				if err := os.Remove(path); err != nil {
-					log.Infoln("Failed to delete bad symlink in titles: ", err.Error())
-				}
-			}
-		} else {
+		if linkpath, err := os.Readlink(path); err != nil {
 			log.Traceln("Failed to read link for '" + path + "'. Deleting bad link.")
 			log.Infoln(e.Name(), ": failed to query symlink without error: ", err.Error())
+		} else if o, err := r.Open(filepath.Base(linkpath)); err != nil {
+			log.Infoln("Source-path: ", linkpath)
+			log.Traceln("CHECK: titles document does not correctly link to repo-object. Deleting…")
+			log.Infoln(e.Name(), ": failed to open corresponding repo-object: ", err.Error())
+			if err := os.Remove(path); err != nil {
+				log.Infoln("Failed to delete bad symlink in titles: ", err.Error())
+			}
+		} else if o.Props[PROP_NAME] != e.Name() {
+			log.Traceln("CHECK: titles document name does not match with 'name' property. Renaming…")
+			// FIXME check for symlink targets and if target does not match names, correct/remove? (We also make new symlinks if one does not exist for PROP_NAME)
+			if err := os.Rename(path, filepath.Join(r.location, SECTION_TITLES, o.Props[PROP_NAME])); err != nil {
+				log.Infoln(e.Name(), ": failed to rename object to proper name: ", err.Error())
+			}
 		}
 	}
 	// TODO count errors and report back
