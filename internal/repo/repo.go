@@ -12,6 +12,7 @@ import (
 	bufio_ "github.com/cobratbq/goutils/std/bufio"
 	"github.com/cobratbq/goutils/std/builtin"
 	"github.com/cobratbq/goutils/std/errors"
+	hash_ "github.com/cobratbq/goutils/std/hash"
 	io_ "github.com/cobratbq/goutils/std/io"
 	"github.com/cobratbq/goutils/std/log"
 	strings_ "github.com/cobratbq/goutils/std/strings"
@@ -96,13 +97,21 @@ func (r *Repo) Check() error {
 			continue
 		}
 		if strings.HasPrefix(e.Name(), PREFIX_TEMPREPOFILE) {
-			if os.Remove(r.repofilepath(e.Name())); err != nil {
-				log.Infoln("Failed to remove old temporary file:", e.Name())
+			if err = os.Remove(r.repofilepath(e.Name())); err == nil {
+				log.Traceln("Removed temporary file:", e.Name())
+			} else {
+				log.Infoln("Failed to remove old temporary file '"+e.Name()+"':", err.Error())
 			}
 			continue
 		}
+		if checksum, err := hash_.HashFile(builtin.Expect(blake2b.New512(nil)), r.repofilepath(e.Name())); err != nil {
+			log.Infoln("Failed to checksum repo-object:", hex.EncodeToString(checksum))
+			continue
+		} else if e.Name() != hex.EncodeToString(checksum) {
+			log.Infoln("Checksum of repo-object does not match with object name:", e.Name(), hex.EncodeToString(checksum))
+			continue
+		}
 		// FIXME check for duplicate names, i.e. some documents won't show up when symlinking by name.
-		// FIXME checksum file contents and compare hex(hash) with filename
 		// Checking characteristics of file properties.
 		if info, err := os.Stat(r.repofilepath(e.Name() + SUFFIX_PROPERTIES)); err != nil || info.Mode()&fs.ModeType != 0 {
 			// TODO check if valid '.properties' file, i.e. readable, parsable content.
@@ -162,8 +171,8 @@ func (r *Repo) Check() error {
 	return nil
 }
 
-func (r *Repo) writeProperties(filename, checksumhex, name string) error {
-	return os.WriteFile(filename+SUFFIX_PROPERTIES, []byte(PROP_HASH+"=blake2b:"+checksumhex+"\n"+PROP_NAME+"="+name), 0600)
+func (r *Repo) WriteProperties(objname, checksumhex, name string) error {
+	return os.WriteFile(r.repofilepath(objname)+SUFFIX_PROPERTIES, []byte(PROP_HASH+"=blake2b:"+checksumhex+"\n"+PROP_NAME+"="+name), 0600)
 }
 
 type RepoObj struct {
@@ -172,6 +181,7 @@ type RepoObj struct {
 }
 
 func (r *Repo) Acquire(reader io.Reader, name string) (RepoObj, error) {
+	log.Traceln("Acquiring new document into repository…")
 	tempf, tempfname, err := r.temprepofile()
 	if err != nil {
 		return RepoObj{}, errors.Context(err, "failed to create temporary file for storing content in repo")
@@ -184,14 +194,14 @@ func (r *Repo) Acquire(reader io.Reader, name string) (RepoObj, error) {
 	}
 	checksumhex := hex.EncodeToString(fhash.Sum(nil))
 	log.Traceln("checksum:", checksumhex)
-	destname := r.repofilepath(checksumhex)
-	if err := os.Rename(tempfname, destname); err != nil {
-		return RepoObj{}, errors.Context(err, "failed to move temporary file '"+tempfname+"' to definite location '"+destname+"'")
+	if err := os.Rename(tempfname, r.repofilepath(checksumhex)); err != nil {
+		return RepoObj{}, errors.Context(err, "failed to move temporary file '"+tempfname+"' to definite repo-object location '"+checksumhex+"'")
 	}
-	if err := r.writeProperties(destname, checksumhex, name); err != nil {
+	if err := r.WriteProperties(checksumhex, checksumhex, name); err != nil {
 		return RepoObj{}, errors.Context(err, "failed to write properties-file")
 	}
 	// FIXME get RepoObj instance from writeProperties, instead of going through Open?
+	log.Traceln("Completed acquisition. (object: " + checksumhex + ")")
 	return r.Open(checksumhex)
 	// FIXME where to start symlinking the repo content?
 	//if err := os.Symlink(filepath.Join("..", SUBDIR_REPO, checksumhex), filepath.Join(r.location, SECTION_TITLES, name)); err != nil {
