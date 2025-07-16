@@ -10,6 +10,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 	"github.com/cobratbq/doclib/internal/repo"
 	"github.com/cobratbq/goutils/std/builtin"
+	"github.com/cobratbq/goutils/std/builtin/set"
 	io_ "github.com/cobratbq/goutils/std/io"
 	"github.com/cobratbq/goutils/std/log"
 )
@@ -31,7 +32,10 @@ func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 		id   int
 		hash binding.String
 		name binding.String
-	}{id: -1, hash: binding.NewString(), name: binding.NewString()}
+		tags map[string]map[string]struct{}
+	}{id: -1, hash: binding.NewString(), name: binding.NewString(), tags: map[string]map[string]struct{}{
+		repo.TAGGROUP_AUTHORS: make(map[string]struct{}),
+	}}
 	lblHash := widget.NewLabel("hash:")
 	lblHash.TextStyle.Italic = true
 	lblHashValue := widget.NewLabel("")
@@ -41,14 +45,10 @@ func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 	lblName.TextStyle.Italic = true
 	inputName := widget.NewEntryWithData(interop.name)
 	inputName.Scroll = fyne.ScrollHorizontalOnly
-	listObjects.OnSelected = func(id widget.ListItemID) {
-		interop.id = id
-		interop.hash.Set(repoObjs[id].Props[repo.PROP_HASH])
-		interop.name.Set(repoObjs[id].Props[repo.PROP_NAME])
-	}
 	btnUpdate := widget.NewButton("Update", func() {
 		repoObjs[interop.id].Props[repo.PROP_HASH] = builtin.Expect(interop.hash.Get())
 		repoObjs[interop.id].Props[repo.PROP_NAME] = builtin.Expect(interop.name.Get())
+		repoObjs[interop.id].Tags = interop.tags
 		if err := docrepo.Save(repoObjs[interop.id]); err != nil {
 			lblStatus.SetText("Failed to save updated properties: " + err.Error())
 		}
@@ -87,7 +87,52 @@ func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 			lblStatus.SetText("Check finished with errors: " + err.Error())
 		}
 	})
-	return container.NewBorder(nil, lblStatus, nil, nil, container.NewBorder(nil, container.NewHBox(btnAcquire, btnCheck), listObjects, nil, container.New(layout.NewFormLayout(), lblHash, lblHashValue, lblName, inputName, layout.NewSpacer(), container.NewBorder(nil, nil, nil, btnUpdate, nil))))
+	lblAuthors := widget.NewLabel("Authors:")
+	lblAuthors.TextStyle.Italic = true
+	containerAuthors := container.NewVBox()
+	for i, e := range docrepo.Tags(repo.TAGGROUP_AUTHORS) {
+		chk := widget.NewCheck(e, func(checked bool) {
+			var index = i
+			if checked {
+				set.Insert(interop.tags[repo.TAGGROUP_AUTHORS], docrepo.Tags(repo.TAGGROUP_AUTHORS)[index])
+			} else {
+				set.Remove(interop.tags[repo.TAGGROUP_AUTHORS], docrepo.Tags(repo.TAGGROUP_AUTHORS)[index])
+			}
+		})
+		containerAuthors.Add(chk)
+	}
+	listObjects.OnSelected = func(id widget.ListItemID) {
+		interop.id = id
+		interop.hash.Set(repoObjs[id].Props[repo.PROP_HASH])
+		interop.name.Set(repoObjs[id].Props[repo.PROP_NAME])
+		interop.tags = map[string]map[string]struct{}{
+			repo.TAGGROUP_AUTHORS: map[string]struct{}{},
+		}
+		for t := range repoObjs[id].Tags[repo.TAGGROUP_AUTHORS] {
+			set.Insert(interop.tags[repo.TAGGROUP_AUTHORS], t)
+		}
+		for _, e := range containerAuthors.Objects {
+			chk := e.(*widget.Check)
+			_, ok := interop.tags[repo.TAGGROUP_AUTHORS][chk.Text]
+			chk.SetChecked(ok)
+		}
+	}
+	return container.NewBorder(nil, lblStatus, nil, nil,
+		container.NewBorder(
+			nil, container.NewHBox(btnAcquire, btnCheck), listObjects, nil,
+			container.NewBorder(
+				container.New(layout.NewFormLayout(),
+					lblHash, lblHashValue,
+					lblName, inputName,
+					layout.NewSpacer(), container.NewBorder(nil, nil, nil, btnUpdate, nil),
+				),
+				nil,
+				nil,
+				nil,
+				container.NewBorder(lblAuthors, nil, nil, nil, containerAuthors),
+			),
+		),
+	)
 }
 
 func main() {
