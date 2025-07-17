@@ -28,15 +28,11 @@ const PREFIX_REPO_TEMP = "temp--"
 const SUFFIX_PROPERTIES = ".properties"
 const PROP_HASH = "hash"
 const PROP_NAME = "name"
+const PROP_PREFIX_TAGS = "tags."
 const SECTION_TITLES = "titles"
-const TAGGROUP_AUTHORS = "authors"
 
 func Props() []string {
 	return []string{PROP_HASH, PROP_NAME}
-}
-
-func TagGroups() []string {
-	return []string{TAGGROUP_AUTHORS}
 }
 
 func Hash(location string) ([64]byte, error) {
@@ -252,10 +248,11 @@ func (r *Repo) Check() error {
 }
 
 // FIXME write a version=0 property as an indication of what to expect from repo content.
+// FIXME preserve unknown categories/tags?
 func (r *Repo) writeProperties(objname, hashspec, name string, tags map[string]map[string]struct{}) error {
 	var b = []byte("version=0\n" + PROP_HASH + "=" + hashspec + "\n" + PROP_NAME + "=" + name + "\n")
 	for group, g := range tags {
-		b = append(b, []byte("tags."+group+"=")...)
+		b = append(b, []byte(PROP_PREFIX_TAGS+group+"=")...)
 		t := maps_.ExtractKeys(g)
 		slices.Sort(t)
 		b = append(b, []byte(strings.Join(t, ","))...)
@@ -320,7 +317,7 @@ func (r *Repo) Open(objname string) (RepoObj, error) {
 	}
 	propmap := make(map[string]string, len(props))
 	for _, p := range props {
-		if strings.HasPrefix(p[0], "tags.") {
+		if strings.HasPrefix(p[0], PROP_PREFIX_TAGS) {
 			continue
 		}
 		propmap[p[0]] = p[1]
@@ -330,19 +327,19 @@ func (r *Repo) Open(objname string) (RepoObj, error) {
 		tags[cat] = map[string]struct{}{}
 	}
 	for _, p := range props {
-		if !strings.HasPrefix(p[0], "tags.") {
+		if !strings.HasPrefix(p[0], PROP_PREFIX_TAGS) {
 			continue
 		}
-		category := strings.TrimPrefix(p[0], "tags.")
-		if _, ok := tags[category]; !ok {
+		cat := strings.TrimPrefix(p[0], PROP_PREFIX_TAGS)
+		if _, ok := tags[cat]; !ok {
 			// FIXME for now skip categories that we don't acknowledge in the repository, i.e. only known in tags-property.
 			continue
 		}
-		group := make(map[string]struct{})
+		group := map[string]struct{}{}
 		for _, t := range strings.Split(p[1], ",") {
 			set.Insert(group, strings.TrimSpace(t))
 		}
-		tags[category] = group
+		tags[cat] = group
 	}
 	log.Traceln("Current tags:", tags)
 	// TODO check allowed properties? (permit unknown properties?, as forward-compatibility?)
