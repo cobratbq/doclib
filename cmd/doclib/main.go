@@ -21,31 +21,21 @@ type interopType struct {
 	id   int
 	hash binding.String
 	name binding.String
-	tags map[string]map[string]struct{}
+	tags map[string]map[string]binding.Bool
 }
 
-func generateTagsContainer(group string, interop *interopType, docrepo *repo.Repo) (*widget.Label, *fyne.Container) {
+func generateTagsContainer(group string, interop *interopType, docrepo *repo.Repo) *fyne.Container {
 	lblTag := widget.NewLabel(strings.ToTitle(group) + ":")
 	lblTag.TextStyle.Italic = true
 	containerTags := container.NewVBox()
-	for i, e := range docrepo.Tags(group) {
-		chk := widget.NewCheck(e, func(checked bool) {
-			var index = i
-			if checked {
-				set.Insert(interop.tags[group], docrepo.Tags(group)[index])
-			} else {
-				set.Remove(interop.tags[group], docrepo.Tags(group)[index])
-			}
-		})
+	for _, e := range docrepo.Tags(group) {
+		chk := widget.NewCheckWithData(e, interop.tags[group][e])
 		containerTags.Add(chk)
 	}
-	return lblTag, containerTags
+	return containerTags
 }
 
 func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
-	lblStatus := widget.NewLabel("")
-	lblStatus.TextStyle.Italic = true
-	lblStatus.Truncation = fyne.TextTruncateEllipsis
 	repoObjs := builtin.Expect(docrepo.List())
 	// TODO needs smaller font, more suitable theme, or plain (unthemed) widgets.
 	listObjects := widget.NewList(func() int { return len(repoObjs) }, func() fyne.CanvasObject {
@@ -55,9 +45,16 @@ func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 		obj.(*widget.Label).SetText(repoObjs[id].Props[repo.PROP_NAME])
 	})
 	// TODO now needs to be sync with repo.Props() list
-	interop := interopType{id: -1, hash: binding.NewString(), name: binding.NewString(), tags: map[string]map[string]struct{}{
-		repo.TAGGROUP_AUTHORS: make(map[string]struct{}),
-	}}
+	interop := interopType{id: -1, hash: binding.NewString(), name: binding.NewString(), tags: map[string]map[string]binding.Bool{}}
+	for _, cat := range docrepo.Categories() {
+		interop.tags[cat] = map[string]binding.Bool{}
+		for _, tag := range docrepo.Tags(cat) {
+			interop.tags[cat][tag] = binding.NewBool()
+		}
+	}
+	lblStatus := widget.NewLabel("")
+	lblStatus.TextStyle.Italic = true
+	lblStatus.Truncation = fyne.TextTruncateEllipsis
 	lblHash := widget.NewLabel("hash:")
 	lblHash.TextStyle.Italic = true
 	lblHashValue := widget.NewLabel("")
@@ -70,7 +67,15 @@ func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 	btnUpdate := widget.NewButton("Update", func() {
 		repoObjs[interop.id].Props[repo.PROP_HASH] = builtin.Expect(interop.hash.Get())
 		repoObjs[interop.id].Props[repo.PROP_NAME] = builtin.Expect(interop.name.Get())
-		repoObjs[interop.id].Tags = interop.tags
+		for cat, tags := range interop.tags {
+			for k, v := range tags {
+				if builtin.Expect(v.Get()) {
+					set.Insert(repoObjs[interop.id].Tags[cat], k)
+				} else {
+					set.Remove(repoObjs[interop.id].Tags[cat], k)
+				}
+			}
+		}
 		if err := docrepo.Save(repoObjs[interop.id]); err != nil {
 			lblStatus.SetText("Failed to save updated properties: " + err.Error())
 		}
@@ -109,22 +114,32 @@ func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 			lblStatus.SetText("Check finished with errors: " + err.Error())
 		}
 	})
-	lblAuthors, containerAuthors := generateTagsContainer(repo.TAGGROUP_AUTHORS, &interop, docrepo)
+	tabsTags := container.NewAppTabs()
+	categories := map[string]*fyne.Container{}
+	for _, cat := range docrepo.Categories() {
+		containerCategory := generateTagsContainer(cat, &interop, docrepo)
+		categories[cat] = containerCategory
+		tabsTags.Items = append(tabsTags.Items, container.NewTabItem(strings.ToTitle(cat), containerCategory))
+	}
+	tabsTags.Refresh()
+	// FIXME support deselecting, zero selections, appropriately clearing values
 	listObjects.OnSelected = func(id widget.ListItemID) {
 		interop.id = id
 		interop.hash.Set(repoObjs[id].Props[repo.PROP_HASH])
 		interop.name.Set(repoObjs[id].Props[repo.PROP_NAME])
-		interop.tags = map[string]map[string]struct{}{
-			repo.TAGGROUP_AUTHORS: map[string]struct{}{},
+		for cat, tags := range interop.tags {
+			for k, v := range tags {
+				_, ok := repoObjs[id].Tags[cat][k]
+				v.Set(ok)
+			}
 		}
-		for t := range repoObjs[id].Tags[repo.TAGGROUP_AUTHORS] {
-			set.Insert(interop.tags[repo.TAGGROUP_AUTHORS], t)
-		}
-		for _, e := range containerAuthors.Objects {
-			chk := e.(*widget.Check)
-			_, ok := interop.tags[repo.TAGGROUP_AUTHORS][chk.Text]
-			chk.SetChecked(ok)
-		}
+		//for _, cat := range docrepo.Categories() {
+		//	interop.tags[cat] = map[string]binding.Bool{}
+		//	for t := range repoObjs[id].Tags[cat] {
+		//		interop.tags[cat][t].Set()
+		//		set.Insert(interop.tags[cat], t)
+		//	}
+		//}
 	}
 	return container.NewBorder(nil, lblStatus, nil, nil,
 		container.NewBorder(
@@ -138,7 +153,7 @@ func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 				nil,
 				nil,
 				nil,
-				container.NewBorder(lblAuthors, nil, nil, nil, containerAuthors),
+				tabsTags,
 			),
 		),
 	)

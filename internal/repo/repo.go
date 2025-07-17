@@ -11,6 +11,7 @@ import (
 	"github.com/cobratbq/goutils/assert"
 	bufio_ "github.com/cobratbq/goutils/std/bufio"
 	"github.com/cobratbq/goutils/std/builtin"
+	"github.com/cobratbq/goutils/std/builtin/maps"
 	maps_ "github.com/cobratbq/goutils/std/builtin/maps"
 	"github.com/cobratbq/goutils/std/builtin/set"
 	"github.com/cobratbq/goutils/std/errors"
@@ -49,7 +50,7 @@ func Hash(location string) ([64]byte, error) {
 type Repo struct {
 	location string
 	props    []string
-	tags     map[string][]string
+	cats     map[string][]string
 }
 
 func (r *Repo) repofilepath(path string) string {
@@ -69,7 +70,8 @@ func (r *Repo) temprepofile() (*os.File, string, error) {
 	return tempf, tempf.Name(), nil
 }
 
-func listTags(location string) ([]string, error) {
+// TODO consider renaming 'titles' to 'archive' or 'all' or something, to indicate that it lists all documents
+func listOptions(location string) ([]string, error) {
 	if entries, err := os.ReadDir(location); err != nil {
 		return nil, errors.Context(err, "directory missing for tag-group: "+location)
 	} else {
@@ -84,14 +86,26 @@ func listTags(location string) ([]string, error) {
 func OpenRepo(location string) Repo {
 	// TODO move default name to template.properties
 	props := Props()
-	index := make(map[string][]string)
+	index := map[string][]string{}
 	// FIXME do proper error handling
-	index[TAGGROUP_AUTHORS] = builtin.Expect(listTags(filepath.Join(location, TAGGROUP_AUTHORS)))
-	return Repo{location: location, props: props[:], tags: index}
+	for _, e := range builtin.Expect(os.ReadDir(location)) {
+		if e.Name() == SUBDIR_REPO || e.Name() == SECTION_TITLES {
+			continue
+		}
+		index[strings.ToLower(e.Name())] = builtin.Expect(listOptions(filepath.Join(location, e.Name())))
+	}
+	log.Traceln("Category-index:", index)
+	return Repo{location: location, props: props[:], cats: index}
 }
 
-func (r *Repo) Tags(group string) []string {
-	if index, ok := r.tags[group]; !ok {
+func (r *Repo) Categories() []string {
+	keys := maps.ExtractKeys(r.cats)
+	slices.Sort(keys)
+	return keys
+}
+
+func (r *Repo) Tags(category string) []string {
+	if index, ok := r.cats[category]; !ok {
 		return nil
 	} else {
 		return index
@@ -237,8 +251,9 @@ func (r *Repo) Check() error {
 	return nil
 }
 
+// FIXME write a version=0 property as an indication of what to expect from repo content.
 func (r *Repo) writeProperties(objname, hashspec, name string, tags map[string]map[string]struct{}) error {
-	var b = []byte(PROP_HASH + "=" + hashspec + "\n" + PROP_NAME + "=" + name + "\n")
+	var b = []byte("version=0\n" + PROP_HASH + "=" + hashspec + "\n" + PROP_NAME + "=" + name + "\n")
 	for group, g := range tags {
 		b = append(b, []byte("tags."+group+"=")...)
 		t := maps_.ExtractKeys(g)
@@ -311,15 +326,23 @@ func (r *Repo) Open(objname string) (RepoObj, error) {
 		propmap[p[0]] = p[1]
 	}
 	tags := map[string]map[string]struct{}{}
+	for cat := range r.cats {
+		tags[cat] = map[string]struct{}{}
+	}
 	for _, p := range props {
 		if !strings.HasPrefix(p[0], "tags.") {
+			continue
+		}
+		category := strings.TrimPrefix(p[0], "tags.")
+		if _, ok := tags[category]; !ok {
+			// FIXME for now skip categories that we don't acknowledge in the repository, i.e. only known in tags-property.
 			continue
 		}
 		group := make(map[string]struct{})
 		for _, t := range strings.Split(p[1], ",") {
 			set.Insert(group, strings.TrimSpace(t))
 		}
-		tags[strings.TrimPrefix(p[0], "tags.")] = group
+		tags[category] = group
 	}
 	log.Traceln("Current tags:", tags)
 	// TODO check allowed properties? (permit unknown properties?, as forward-compatibility?)
