@@ -1,6 +1,8 @@
 package main
 
 import (
+	"strings"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
@@ -15,6 +17,31 @@ import (
 	"github.com/cobratbq/goutils/std/log"
 )
 
+type interopType struct {
+	id   int
+	hash binding.String
+	name binding.String
+	tags map[string]map[string]struct{}
+}
+
+func generateTagsContainer(group string, interop *interopType, docrepo *repo.Repo) (*widget.Label, *fyne.Container) {
+	lblTag := widget.NewLabel(strings.ToTitle(group) + ":")
+	lblTag.TextStyle.Italic = true
+	containerTags := container.NewVBox()
+	for i, e := range docrepo.Tags(group) {
+		chk := widget.NewCheck(e, func(checked bool) {
+			var index = i
+			if checked {
+				set.Insert(interop.tags[group], docrepo.Tags(group)[index])
+			} else {
+				set.Remove(interop.tags[group], docrepo.Tags(group)[index])
+			}
+		})
+		containerTags.Add(chk)
+	}
+	return lblTag, containerTags
+}
+
 func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 	lblStatus := widget.NewLabel("")
 	lblStatus.TextStyle.Italic = true
@@ -28,12 +55,7 @@ func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 		obj.(*widget.Label).SetText(repoObjs[id].Props[repo.PROP_NAME])
 	})
 	// TODO now needs to be sync with repo.Props() list
-	interop := struct {
-		id   int
-		hash binding.String
-		name binding.String
-		tags map[string]map[string]struct{}
-	}{id: -1, hash: binding.NewString(), name: binding.NewString(), tags: map[string]map[string]struct{}{
+	interop := interopType{id: -1, hash: binding.NewString(), name: binding.NewString(), tags: map[string]map[string]struct{}{
 		repo.TAGGROUP_AUTHORS: make(map[string]struct{}),
 	}}
 	lblHash := widget.NewLabel("hash:")
@@ -87,20 +109,7 @@ func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 			lblStatus.SetText("Check finished with errors: " + err.Error())
 		}
 	})
-	lblAuthors := widget.NewLabel("Authors:")
-	lblAuthors.TextStyle.Italic = true
-	containerAuthors := container.NewVBox()
-	for i, e := range docrepo.Tags(repo.TAGGROUP_AUTHORS) {
-		chk := widget.NewCheck(e, func(checked bool) {
-			var index = i
-			if checked {
-				set.Insert(interop.tags[repo.TAGGROUP_AUTHORS], docrepo.Tags(repo.TAGGROUP_AUTHORS)[index])
-			} else {
-				set.Remove(interop.tags[repo.TAGGROUP_AUTHORS], docrepo.Tags(repo.TAGGROUP_AUTHORS)[index])
-			}
-		})
-		containerAuthors.Add(chk)
-	}
+	lblAuthors, containerAuthors := generateTagsContainer(repo.TAGGROUP_AUTHORS, &interop, docrepo)
 	listObjects.OnSelected = func(id widget.ListItemID) {
 		interop.id = id
 		interop.hash.Set(repoObjs[id].Props[repo.PROP_HASH])

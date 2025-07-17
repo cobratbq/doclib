@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/cobratbq/goutils/assert"
 	bufio_ "github.com/cobratbq/goutils/std/bufio"
 	"github.com/cobratbq/goutils/std/builtin"
 	maps_ "github.com/cobratbq/goutils/std/builtin/maps"
@@ -16,6 +17,7 @@ import (
 	hash_ "github.com/cobratbq/goutils/std/hash"
 	io_ "github.com/cobratbq/goutils/std/io"
 	"github.com/cobratbq/goutils/std/log"
+	os_ "github.com/cobratbq/goutils/std/os"
 	strings_ "github.com/cobratbq/goutils/std/strings"
 	"golang.org/x/crypto/blake2b"
 )
@@ -28,8 +30,8 @@ const PROP_NAME = "name"
 const SECTION_TITLES = "titles"
 const TAGGROUP_AUTHORS = "authors"
 
-func Props() [2]string {
-	return [...]string{PROP_HASH, PROP_NAME}
+func Props() []string {
+	return []string{PROP_HASH, PROP_NAME}
 }
 
 func TagGroups() []string {
@@ -96,6 +98,7 @@ func (r *Repo) Tags(group string) []string {
 	}
 }
 
+// TODO this is VERY VERY UGLY but functional, so far... Let's get basics working first.
 func (r *Repo) Check() error {
 	var entries []os.DirEntry
 	var err error
@@ -183,16 +186,22 @@ func (r *Repo) Check() error {
 					// TODO we don't currently check if tag-names are used for which there exists no directory
 					maybeTag := strings.ToLower(e.Name())
 					if tags, ok := o.Tags[maybeTag]; ok {
-						if entries, err := os.ReadDir(filepath.Join(r.location, e.Name())); err != nil {
+						if tagdirs, err := os.ReadDir(filepath.Join(r.location, e.Name())); err != nil {
 							log.Warnln("Failed to open tag-directory for tag-group", e.Name())
 						} else {
-							for _, e := range entries {
-								if _, ok := tags[strings.ToLower(e.Name())]; !ok {
-									log.Errorln("'"+e.Name()+"'", "TODO: We should remove symlink here if it exists")
-									// FIXME remove symlink for tag
+							for _, t := range tagdirs {
+								// FIXME strictly speaking, o.Props[PROP_NAME] is not guaranteed. Needs fixing/checking/prevention
+								path := filepath.Join(r.location, e.Name(), t.Name(), o.Props[PROP_NAME])
+								if _, ok := tags[strings.ToLower(t.Name())]; !ok {
+									if os_.ExistsIsSymlink(path) {
+										// FIXME improve error handling
+										assert.Success(os.Remove(path), "Expected removal to succeed.")
+									}
 								} else {
-									log.Errorln("'"+e.Name()+"'", "TODO: We should create symlink here if it does not yet exists")
-									// FIXME check-create symlink for tag
+									if !os_.ExistsIsSymlink(path) {
+										// FIXME improve error handling
+										assert.Success(os.Symlink(filepath.Join("..", "..", SUBDIR_REPO, o.Id), filepath.Join(r.location, e.Name(), t.Name(), o.Props[PROP_NAME])), "Expected symlink creation to succeed.")
+									}
 								}
 							}
 						}
@@ -241,7 +250,7 @@ func (r *Repo) writeProperties(objname, hashspec, name string, tags map[string]m
 }
 
 type RepoObj struct {
-	Name  string
+	Id    string
 	Props map[string]string
 	Tags  map[string]map[string]struct{}
 }
@@ -274,7 +283,7 @@ func (r *Repo) Acquire(reader io.Reader, name string) (RepoObj, error) {
 // Save saves updated repo-object properties to the repository.
 func (r *Repo) Save(obj RepoObj) error {
 	// FIXME update symlinks?
-	return r.writeProperties(obj.Name, obj.Props[PROP_HASH], obj.Props[PROP_NAME], obj.Tags)
+	return r.writeProperties(obj.Id, obj.Props[PROP_HASH], obj.Props[PROP_NAME], obj.Tags)
 }
 
 func (r *Repo) Open(objname string) (RepoObj, error) {
@@ -312,8 +321,9 @@ func (r *Repo) Open(objname string) (RepoObj, error) {
 		}
 		tags[strings.TrimPrefix(p[0], "tags.")] = group
 	}
+	log.Traceln("Current tags:", tags)
 	// TODO check allowed properties? (permit unknown properties?, as forward-compatibility?)
-	return RepoObj{Name: objname, Props: propmap, Tags: tags}, nil
+	return RepoObj{Id: objname, Props: propmap, Tags: tags}, nil
 }
 
 func (r *Repo) List() ([]RepoObj, error) {
