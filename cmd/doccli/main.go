@@ -8,6 +8,7 @@ import (
 )
 
 type config struct {
+	args     []string
 	location string
 }
 
@@ -15,23 +16,26 @@ func parseFlags() config {
 	var cfg config
 	flag.StringVar(&cfg.location, "repo", ".", "Location of the repository root directory.")
 	flag.Parse()
+	cfg.args = flag.Args()
 	return cfg
 }
 
 func cmdCheck(cfg *config) {
 	repo := repo.OpenRepo(cfg.location)
-	log.Infoln("result:", repo.Check())
+	log.Infoln("Finished:", repo.Check())
 }
 
+// TODO eventually, may need to add lock if both UI and cli are used at same time, especially when performing checks/fixes.
 func main() {
 	// TODO consider using spf13/cobra for command-line commands/parameters/shell-completions/...
 	cfg := parseFlags()
 
-	if flag.NArg() < 1 {
+	if len(cfg.args) < 1 {
+		flag.PrintDefaults()
 		return
 	}
 
-	switch flag.Arg(0) {
+	switch cfg.args[0] {
 	case "check":
 		cmdCheck(&cfg)
 	default:

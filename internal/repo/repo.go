@@ -227,20 +227,23 @@ func (r *Repo) Check() error {
 	for _, e := range entries {
 		log.Traceln("Processing titles-entry…", e.Name())
 		path := filepath.Join(r.location, SECTION_TITLES, e.Name())
-		if linkpath, err := os.Readlink(path); err != nil {
+		if targetpath, err := os.Readlink(path); err != nil {
 			log.Warnln(e.Name(), ": failed to query symlink without error:", err.Error())
-		} else if obj, err := r.Open(filepath.Base(linkpath)); err != nil {
+		} else if obj, err := r.Open(filepath.Base(targetpath)); err != nil {
+			// TODO should I be checking that linkpath has characteristics of repo-object before drawing conclusions?
 			log.Traceln("titles symlink does not correctly link to repo-object. Deleting…")
 			if err := os.Remove(path); err != nil {
-				log.Warnln("Failed to delete bad symlink in titles:", err.Error())
+				log.Warnln("Failed to delete broken symlink in titles:", err.Error())
 			}
+			log.Traceln("Broken symlink in titles successfully removed.", path)
 		} else if obj.Props[PROP_NAME] != e.Name() {
-			log.Traceln("titles document name does not match with 'name' property. Removing…")
+			log.Traceln("Titles document name does not match with 'name' property. Removing…")
+			// Previously, we created symlinks when they don't exist at expected name. Now we remove existing
+			// symlinks which refer to repo-objects with a different name.
 			if err := os.Remove(path); err != nil {
-				// Previously, we created symlinks when they don't exist at expected name. Now we remove
-				// existing symlinks which refer to repo-objects with a different name.
 				log.Warnln(e.Name(), ": failed to rename object to proper name:", err.Error())
 			}
+			log.Traceln("Titles symlink does not have the correct document name. Removed.")
 		}
 	}
 	// TODO count errors and report back
