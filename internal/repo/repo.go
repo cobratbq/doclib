@@ -8,7 +8,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/cobratbq/goutils/assert"
 	bufio_ "github.com/cobratbq/goutils/std/bufio"
 	"github.com/cobratbq/goutils/std/builtin"
 	"github.com/cobratbq/goutils/std/builtin/maps"
@@ -41,6 +40,10 @@ func Hash(location string) ([64]byte, error) {
 	} else {
 		return [64]byte{}, errors.Context(err, "hashing content at '"+location+"'")
 	}
+}
+
+func isStandardDir(name string) bool {
+	return name == SUBDIR_REPO || name == SECTION_TITLES
 }
 
 type Repo struct {
@@ -108,7 +111,45 @@ func (r *Repo) Tags(category string) []string {
 	}
 }
 
-// TODO this is VERY VERY UGLY but functional, so far... Let's get basics working first.
+func (r *Repo) checkTags(id, name string, tagCats map[string]map[string]struct{}) error {
+	log.Traceln("Repo-object tags:", tagCats)
+	entries, err := os.ReadDir(r.location)
+	if err != nil {
+		return errors.Context(err, "failed to open root repository directory for tags processing")
+	}
+	for _, e := range entries {
+		if isStandardDir(e.Name()) {
+			continue
+		}
+		// TODO we don't currently check if tag-names are used for which there exists no directory
+		tags, ok := tagCats[strings.ToLower(e.Name())]
+		if !ok {
+			continue
+		}
+		tagdirs, err := os.ReadDir(filepath.Join(r.location, e.Name()))
+		if err != nil {
+			log.Warnln("Failed to open tag-directory for tag-group", e.Name())
+			continue
+		}
+		for _, t := range tagdirs {
+			path := filepath.Join(r.location, e.Name(), t.Name(), name)
+			_, tagExists := tags[strings.ToLower(t.Name())]
+			linkExists := os_.ExistsIsSymlink(path)
+			switch {
+			case !tagExists && linkExists:
+				if err := os.Remove(path); err != nil {
+					log.Warnln("Failed to remove unexpected symlink", path, err.Error())
+				}
+			case tagExists && !linkExists:
+				if err := os.Symlink(filepath.Join("..", "..", SUBDIR_REPO, id), filepath.Join(r.location, e.Name(), t.Name(), name)); err != nil {
+					log.Warnln("Failed to create missing symlink", path, err.Error())
+				}
+			}
+		}
+	}
+	return nil
+}
+
 func (r *Repo) Check() error {
 	var entries []os.DirEntry
 	var err error
@@ -173,6 +214,7 @@ func (r *Repo) Check() error {
 			}
 			if name, ok := o.Props[PROP_NAME]; !ok {
 				log.Warnln(e.Name(), ": missing 'name' property.")
+				continue
 			} else if info, err := os.Lstat(filepath.Join(r.location, SECTION_TITLES, name)); err != nil {
 				// Create symlink when one does not exist under the correct name as stated in the properties.
 				// Next we will remove symlinks that refer to repo-objects that have a different name-prop.
@@ -183,40 +225,8 @@ func (r *Repo) Check() error {
 				}
 			} else if info.Mode()&os.ModeSymlink == 0 {
 				log.Warnln(info.Name(), ": a foreign file-system object was found where a symlink to a repo-object was expected.")
-			}
-			// TODO check directory presence for each of the listed tags.
-			log.Traceln("Tags:", o.Tags)
-			if entries, err := os.ReadDir(r.location); err != nil {
-				log.Warnln("Failed to open root repository directory for tags processing:", err.Error())
-			} else {
-				for _, e := range entries {
-					if e.Name() == SUBDIR_REPO || e.Name() == SECTION_TITLES {
-						continue
-					}
-					// TODO we don't currently check if tag-names are used for which there exists no directory
-					maybeTag := strings.ToLower(e.Name())
-					if tags, ok := o.Tags[maybeTag]; ok {
-						if tagdirs, err := os.ReadDir(filepath.Join(r.location, e.Name())); err != nil {
-							log.Warnln("Failed to open tag-directory for tag-group", e.Name())
-						} else {
-							for _, t := range tagdirs {
-								// FIXME strictly speaking, o.Props[PROP_NAME] is not guaranteed. Needs fixing/checking/prevention
-								path := filepath.Join(r.location, e.Name(), t.Name(), o.Props[PROP_NAME])
-								if _, ok := tags[strings.ToLower(t.Name())]; !ok {
-									if os_.ExistsIsSymlink(path) {
-										// FIXME improve error handling
-										assert.Success(os.Remove(path), "Expected removal to succeed.")
-									}
-								} else {
-									if !os_.ExistsIsSymlink(path) {
-										// FIXME improve error handling
-										assert.Success(os.Symlink(filepath.Join("..", "..", SUBDIR_REPO, o.Id), filepath.Join(r.location, e.Name(), t.Name(), o.Props[PROP_NAME])), "Expected symlink creation to succeed.")
-									}
-								}
-							}
-						}
-					}
-				}
+			} else if err := r.checkTags(o.Id, o.Props[PROP_NAME], o.Tags); err != nil {
+				log.Warnln("Failure during tags processing:", err.Error())
 			}
 		}
 	}
@@ -335,14 +345,12 @@ func (r *Repo) Open(objname string) (RepoObj, error) {
 		}
 		cat := strings.TrimPrefix(p[0], PROP_PREFIX_TAGS)
 		if _, ok := tags[cat]; !ok {
-			// FIXME for now skip categories that we don't acknowledge in the repository, i.e. only known in tags-property.
-			continue
+			// Primarily, preserve existing tag-properties even if not currently in use.
+			tags[cat] = map[string]struct{}{}
 		}
-		group := map[string]struct{}{}
 		for _, t := range strings.Split(p[1], ",") {
-			set.Insert(group, strings.TrimSpace(t))
+			set.Insert(tags[cat], strings.TrimSpace(t))
 		}
-		tags[cat] = group
 	}
 	log.Traceln("Current tags:", tags)
 	// TODO check allowed properties? (permit unknown properties?, as forward-compatibility?)

@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"os"
 
 	"github.com/cobratbq/doclib/internal/repo"
 	"github.com/cobratbq/goutils/std/log"
@@ -31,6 +32,7 @@ func main() {
 	cfg := parseFlags()
 
 	if len(cfg.args) < 1 {
+		os.Stderr.WriteString("Valid commands: check\n")
 		flag.PrintDefaults()
 		return
 	}
