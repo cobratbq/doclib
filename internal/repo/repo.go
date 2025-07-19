@@ -265,8 +265,6 @@ func (r *Repo) Check() error {
 	return nil
 }
 
-// FIXME write a version=0 property as an indication of what to expect from repo content.
-// FIXME preserve unknown categories/tags?
 func (r *Repo) writeProperties(objname, hashspec, name string, tags map[string]map[string]struct{}) error {
 	var b = []byte(PROP_VERSION + "=" + VERSION + "\n" + PROP_HASH + "=" + hashspec + "\n" + PROP_NAME + "=" + name + "\n")
 	for group, g := range tags {
