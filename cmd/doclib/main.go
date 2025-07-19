@@ -78,6 +78,7 @@ func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 			}
 		}
 		if err := docrepo.Save(repoObjs[interop.id]); err != nil {
+			log.Traceln("Failed to save repo-object:", err.Error())
 			lblStatus.SetText("Failed to save updated properties: " + err.Error())
 		}
 	})
