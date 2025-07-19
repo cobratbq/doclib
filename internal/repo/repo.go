@@ -22,9 +22,11 @@ import (
 	"golang.org/x/crypto/blake2b"
 )
 
+const VERSION = "0"
 const SUBDIR_REPO = "repo"
 const PREFIX_REPO_TEMP = "temp--"
 const SUFFIX_PROPERTIES = ".properties"
+const PROP_VERSION = "version"
 const PROP_HASH = "hash"
 const PROP_NAME = "name"
 const PROP_PREFIX_TAGS = "tags."
@@ -266,7 +268,7 @@ func (r *Repo) Check() error {
 // FIXME write a version=0 property as an indication of what to expect from repo content.
 // FIXME preserve unknown categories/tags?
 func (r *Repo) writeProperties(objname, hashspec, name string, tags map[string]map[string]struct{}) error {
-	var b = []byte("version=0\n" + PROP_HASH + "=" + hashspec + "\n" + PROP_NAME + "=" + name + "\n")
+	var b = []byte(PROP_VERSION + "=" + VERSION + "\n" + PROP_HASH + "=" + hashspec + "\n" + PROP_NAME + "=" + name + "\n")
 	for group, g := range tags {
 		b = append(b, []byte(PROP_PREFIX_TAGS+group+"=")...)
 		t := maps_.ExtractKeys(g)
@@ -321,10 +323,9 @@ func (r *Repo) Open(objname string) (RepoObj, error) {
 		if len(s) == 0 || strings_.AnyPrefix(strings.TrimLeft(s, " \t"), "#", "!") {
 			return [2]string{}, bufio_.ErrProcessingIgnore
 		}
-		// TODO trim whitespacing?
 		// TODO support ':' separator?
 		if key, value, ok := strings.Cut(s, "="); ok {
-			return [...]string{key, value}, nil
+			return [...]string{strings.TrimSpace(key), strings.TrimSpace(value)}, nil
 		}
 		return [2]string{}, errors.ErrIllegal
 	})
@@ -337,6 +338,9 @@ func (r *Repo) Open(objname string) (RepoObj, error) {
 			continue
 		}
 		propmap[p[0]] = p[1]
+	}
+	if v, ok := propmap[PROP_VERSION]; !ok || v != VERSION {
+		return RepoObj{}, errors.Context(errors.ErrIllegal, "version of properties is not supported")
 	}
 	tags := map[string]map[string]struct{}{}
 	for cat := range r.cats {
