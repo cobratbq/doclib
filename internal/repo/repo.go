@@ -160,7 +160,6 @@ func (r *Repo) Check() error {
 	if entries, err = os.ReadDir(r.repofilepath("")); err != nil {
 		return errors.Context(err, "failed to open object-repository directory")
 	}
-	// FIXME checks don't take into account other kinds of file system objects
 	for _, e := range entries {
 		log.Traceln("Processing repo-entry…", e.Name())
 		// Any non-regular file-system object is a foreign entity.
@@ -198,7 +197,6 @@ func (r *Repo) Check() error {
 		} else if e.Name() != hex.EncodeToString(checksum) {
 			log.Warnln("Repo-object '" + e.Name() + "': checksum does not match. Possible corruption. (checksum: " + hex.EncodeToString(checksum) + ")")
 		}
-		// FIXME check for duplicate names, i.e. some documents might not show up when symlinking by duplicate names.
 		// Checking characteristics of file properties.
 		if info, err := os.Stat(r.repofilepath(e.Name() + SUFFIX_PROPERTIES)); err != nil {
 			log.Warnln(e.Name()+SUFFIX_PROPERTIES, ": properties-file is missing.")
@@ -225,8 +223,13 @@ func (r *Repo) Check() error {
 				}
 			} else if info.Mode()&os.ModeSymlink == 0 {
 				log.Warnln(info.Name(), ": a foreign file-system object was found where a symlink to a repo-object was expected.")
-			} else if err := r.checkTags(o.Id, o.Props[PROP_NAME], o.Tags); err != nil {
-				log.Warnln("Failure during tags processing:", err.Error())
+			} else {
+				if targetpath, err := os.Readlink(filepath.Join(r.location, SECTION_TITLES, name)); err == nil && filepath.Base(targetpath) != e.Name() {
+					log.Warnln("Symlink does not point to expected repo-object. Duplicate names are in use:", targetpath)
+				}
+				if err := r.checkTags(o.Id, o.Props[PROP_NAME], o.Tags); err != nil {
+					log.Warnln("Failure during tags processing:", err.Error())
+				}
 			}
 		}
 	}
