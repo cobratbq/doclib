@@ -84,6 +84,7 @@ func listOptions(location string) ([]string, error) {
 	}
 }
 
+// FIXME does not check/create subdirs 'repo' and 'titles'
 func OpenRepo(location string) Repo {
 	// TODO move default name to template.properties
 	props := Props()
@@ -266,15 +267,16 @@ func (r *Repo) Check() error {
 }
 
 func (r *Repo) writeProperties(objname, hashspec, name string, tags map[string]map[string]struct{}) error {
-	var b = []byte(PROP_VERSION + "=" + VERSION + "\n" + PROP_HASH + "=" + hashspec + "\n" + PROP_NAME + "=" + name + "\n")
+	var buffer = []byte(PROP_VERSION + "=" + VERSION + "\n" + PROP_HASH + "=" + hashspec + "\n" + PROP_NAME + "=" + name + "\n")
 	for group, g := range tags {
-		b = append(b, []byte(PROP_PREFIX_TAGS+group+"=")...)
+		if len(g) == 0 {
+			continue
+		}
 		t := maps_.ExtractKeys(g)
 		slices.Sort(t)
-		b = append(b, []byte(strings.Join(t, ","))...)
-		b = append(b, '\n')
+		buffer = append(buffer, []byte(PROP_PREFIX_TAGS+group+"="+strings.Join(t, ",")+"\n")...)
 	}
-	return os.WriteFile(r.repofilepath(objname)+SUFFIX_PROPERTIES, b, 0600)
+	return os.WriteFile(r.repofilepath(objname)+SUFFIX_PROPERTIES, buffer, 0600)
 }
 
 type RepoObj struct {
@@ -362,6 +364,7 @@ func (r *Repo) Open(objname string) (RepoObj, error) {
 	return RepoObj{Id: objname, Props: propmap, Tags: tags}, nil
 }
 
+// TODO could use caching in case the repository has not changed. (Is this really possible if we also expect to read some values from the file system structure?)
 func (r *Repo) List() ([]RepoObj, error) {
 	var err error
 	var direntries []os.DirEntry

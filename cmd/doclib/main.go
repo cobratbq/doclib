@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"strings"
 
 	"fyne.io/fyne/v2"
@@ -99,6 +100,8 @@ func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 				log.Traceln("Failed to copy document into repository:", err.Error())
 				lblStatus.SetText("Failed to import document into repository: " + err.Error())
 			}
+			// FIXME quick & dirty solution to refreshing the list after adding a document.
+			repoObjs = builtin.Expect(docrepo.List())
 			listObjects.Refresh()
 			log.Traceln("Document import completed.")
 		}, parent)
@@ -160,10 +163,13 @@ func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 }
 
 func main() {
+	flagRepo := flag.String("repo", "./data", "Location of the repository.")
+	flag.Parse()
+
 	// TODO needs an App ID
 	app := app.NewWithID("NeedsAnAppID")
 
-	docrepo := repo.OpenRepo("./data")
+	docrepo := repo.OpenRepo(*flagRepo)
 
 	mainwnd := app.NewWindow("Doclib")
 	mainwnd.SetPadded(false)
