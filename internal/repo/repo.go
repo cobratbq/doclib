@@ -356,6 +356,9 @@ func (r *Repo) Open(objname string) (RepoObj, error) {
 			tags[cat] = map[string]struct{}{}
 		}
 		for _, t := range strings.Split(p[1], ",") {
+			if len(t) == 0 {
+				continue
+			}
 			set.Insert(tags[cat], strings.TrimSpace(t))
 		}
 	}
