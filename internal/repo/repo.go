@@ -28,13 +28,10 @@ const PREFIX_REPO_TEMP = "temp--"
 const SUFFIX_PROPERTIES = ".properties"
 const PROP_VERSION = "version"
 const PROP_HASH = "hash"
+const PROP_HASHSPEC_PREFIX = "blake2b:"
 const PROP_NAME = "name"
 const PROP_PREFIX_TAGS = "tags."
 const SECTION_TITLES = "titles"
-
-func Props() []string {
-	return []string{PROP_HASH, PROP_NAME}
-}
 
 func Hash(location string) ([64]byte, error) {
 	if hash, err := hash_.HashFile(builtin.Expect(blake2b.New512(nil)), location); err == nil {
@@ -55,7 +52,6 @@ type Tag struct {
 
 type Repo struct {
 	location string
-	props    []string
 	cats     map[string][]Tag
 }
 
@@ -92,7 +88,6 @@ func listOptions(location string) ([]Tag, error) {
 // FIXME does not check/create subdirs 'repo' and 'titles'
 func OpenRepo(location string) Repo {
 	// TODO move default name to template.properties
-	props := Props()
 	index := map[string][]Tag{}
 	// FIXME do proper error handling
 	for _, e := range builtin.Expect(os.ReadDir(location)) {
@@ -102,7 +97,7 @@ func OpenRepo(location string) Repo {
 		index[strings.ToLower(e.Name())] = builtin.Expect(listOptions(filepath.Join(location, e.Name())))
 	}
 	log.Traceln("Category-index:", index)
-	return Repo{location: location, props: props[:], cats: index}
+	return Repo{location: location, cats: index}
 }
 
 func (r *Repo) Categories() []string {
@@ -214,18 +209,13 @@ func (r *Repo) Check() error {
 		} else if o, err := r.Open(e.Name()); err != nil {
 			log.Warnln(e.Name(), ": failed to parse properties: ", err.Error())
 		} else {
-			if hashspec, ok := o.Props[PROP_HASH]; !ok {
-				log.Warnln(e.Name(), ": missing 'hash'-property.")
-			} else if classifier, value, ok := strings.Cut(hashspec, ":"); !ok || classifier != "blake2b" || value != e.Name() {
-				log.Warnln(e.Name(), ": invalid properties", e.Name(), value)
+			if o.Id != e.Name() {
+				log.Warnln(e.Name(), ": invalid properties", e.Name(), o.Id)
 			}
-			if name, ok := o.Props[PROP_NAME]; !ok {
-				log.Warnln(e.Name(), ": missing 'name' property.")
-				continue
-			} else if info, err := os.Lstat(filepath.Join(r.location, SECTION_TITLES, name)); err != nil {
+			if info, err := os.Lstat(filepath.Join(r.location, SECTION_TITLES, o.Name)); err != nil {
 				// Create symlink when one does not exist under the correct name as stated in the properties.
 				// Next we will remove symlinks that refer to repo-objects that have a different name-prop.
-				if err := os.Symlink(filepath.Join("..", SUBDIR_REPO, e.Name()), filepath.Join(r.location, SECTION_TITLES, name)); err != nil {
+				if err := os.Symlink(filepath.Join("..", SUBDIR_REPO, e.Name()), filepath.Join(r.location, SECTION_TITLES, o.Name)); err != nil {
 					log.Warnln(e.Name(), ": failed to create symlink at expected location:", err.Error())
 				} else {
 					log.Traceln(e.Name(), ": missing symlink in document titles recreated.")
@@ -233,10 +223,10 @@ func (r *Repo) Check() error {
 			} else if info.Mode()&os.ModeSymlink == 0 {
 				log.Warnln(info.Name(), ": a foreign file-system object was found where a symlink to a repo-object was expected.")
 			} else {
-				if targetpath, err := os.Readlink(filepath.Join(r.location, SECTION_TITLES, name)); err == nil && filepath.Base(targetpath) != e.Name() {
+				if targetpath, err := os.Readlink(filepath.Join(r.location, SECTION_TITLES, o.Name)); err == nil && filepath.Base(targetpath) != e.Name() {
 					log.Warnln("Symlink does not point to expected repo-object. Duplicate names are in use:", targetpath)
 				}
-				if err := r.checkTags(o.Id, o.Props[PROP_NAME], o.Tags); err != nil {
+				if err := r.checkTags(o.Id, o.Name, o.Tags); err != nil {
 					log.Warnln("Failure during tags processing:", err.Error())
 				}
 			}
@@ -258,7 +248,7 @@ func (r *Repo) Check() error {
 				log.Warnln("Failed to delete broken symlink in titles:", err.Error())
 			}
 			log.Traceln("Broken symlink in titles successfully removed.", path)
-		} else if obj.Props[PROP_NAME] != e.Name() {
+		} else if obj.Name != e.Name() {
 			log.Traceln("Titles document name does not match with 'name' property. Removing…")
 			// Previously, we created symlinks when they don't exist at expected name. Now we remove existing
 			// symlinks which refer to repo-objects with a different name.
@@ -272,8 +262,8 @@ func (r *Repo) Check() error {
 	return nil
 }
 
-func (r *Repo) writeProperties(objname, hashspec, name string, tags map[string]map[string]struct{}) error {
-	var buffer = []byte(PROP_VERSION + "=" + VERSION + "\n" + PROP_HASH + "=" + hashspec + "\n" + PROP_NAME + "=" + name + "\n")
+func (r *Repo) writeProperties(objname, name string, tags map[string]map[string]struct{}) error {
+	var buffer = []byte(PROP_VERSION + "=" + VERSION + "\n" + PROP_HASH + "=" + PROP_HASHSPEC_PREFIX + objname + "\n" + PROP_NAME + "=" + name + "\n")
 	for group, g := range tags {
 		if len(g) == 0 {
 			continue
@@ -287,6 +277,7 @@ func (r *Repo) writeProperties(objname, hashspec, name string, tags map[string]m
 
 type RepoObj struct {
 	Id    string
+	Name  string
 	Props map[string]string
 	Tags  map[string]map[string]struct{}
 }
@@ -308,7 +299,7 @@ func (r *Repo) Acquire(reader io.Reader, name string) (RepoObj, error) {
 	if err := os.Rename(tempfname, r.repofilepath(checksumhex)); err != nil {
 		return RepoObj{}, errors.Context(err, "failed to move temporary file '"+tempfname+"' to definite repo-object location '"+checksumhex+"'")
 	}
-	if err := r.writeProperties(checksumhex, "blake2b:"+checksumhex, name, map[string]map[string]struct{}{}); err != nil {
+	if err := r.writeProperties(checksumhex, name, map[string]map[string]struct{}{}); err != nil {
 		return RepoObj{}, errors.Context(err, "failed to write properties-file")
 	}
 	// TODO get RepoObj instance from writeProperties, instead of going through Open?
@@ -319,7 +310,7 @@ func (r *Repo) Acquire(reader io.Reader, name string) (RepoObj, error) {
 // Save saves updated repo-object properties to the repository.
 func (r *Repo) Save(obj RepoObj) error {
 	// FIXME update symlinks?
-	return r.writeProperties(obj.Id, obj.Props[PROP_HASH], obj.Props[PROP_NAME], obj.Tags)
+	return r.writeProperties(obj.Id, obj.Name, obj.Tags)
 }
 
 func (r *Repo) Open(objname string) (RepoObj, error) {
@@ -338,39 +329,52 @@ func (r *Repo) Open(objname string) (RepoObj, error) {
 	if err != nil {
 		return RepoObj{}, errors.Context(err, "failed to parse properties for "+objname)
 	}
-	propmap := make(map[string]string, len(props))
+	var obj RepoObj
+	// TODO check allowed properties? (permit unknown properties?, as forward-compatibility?)
 	for _, p := range props {
 		if strings.HasPrefix(p[0], PROP_PREFIX_TAGS) {
+			// Process arbitrary tag-categories later.
 			continue
 		}
-		propmap[p[0]] = p[1]
+		switch p[0] {
+		case PROP_VERSION:
+			if p[1] != VERSION {
+				return RepoObj{}, errors.Context(errors.ErrIllegal, "version of properties is not supported")
+			}
+		case PROP_HASH:
+			if !strings.HasPrefix(p[1], PROP_HASHSPEC_PREFIX) {
+				return RepoObj{}, errors.Context(errors.ErrIllegal, "hashspec must contain prefix for hash function")
+			}
+			obj.Id = strings.TrimPrefix(p[1], PROP_HASHSPEC_PREFIX)
+		case PROP_NAME:
+			obj.Name = p[1]
+		default:
+			// FIXME handle unknown property (should not panic, incomplete implementation)
+			panic("To be implemented")
+		}
 	}
-	if v, ok := propmap[PROP_VERSION]; !ok || v != VERSION {
-		return RepoObj{}, errors.Context(errors.ErrIllegal, "version of properties is not supported")
-	}
-	tags := map[string]map[string]struct{}{}
+	obj.Tags = map[string]map[string]struct{}{}
 	for cat := range r.cats {
-		tags[cat] = map[string]struct{}{}
+		obj.Tags[cat] = map[string]struct{}{}
 	}
 	for _, p := range props {
 		if !strings.HasPrefix(p[0], PROP_PREFIX_TAGS) {
 			continue
 		}
 		cat := strings.TrimPrefix(p[0], PROP_PREFIX_TAGS)
-		if _, ok := tags[cat]; !ok {
+		if _, ok := obj.Tags[cat]; !ok {
 			// Primarily, preserve existing tag-properties even if not currently in use.
-			tags[cat] = map[string]struct{}{}
+			obj.Tags[cat] = map[string]struct{}{}
 		}
 		for _, t := range strings.Split(p[1], ",") {
 			if len(t) == 0 {
 				continue
 			}
-			set.Insert(tags[cat], strings.TrimSpace(t))
+			set.Insert(obj.Tags[cat], strings.TrimSpace(t))
 		}
 	}
-	log.Traceln("Current tags:", tags)
-	// TODO check allowed properties? (permit unknown properties?, as forward-compatibility?)
-	return RepoObj{Id: objname, Props: propmap, Tags: tags}, nil
+	log.Traceln("Current tags:", obj.Tags)
+	return obj, nil
 }
 
 // TODO could use caching in case the repository has not changed. (Is this really possible if we also expect to read some values from the file system structure?)

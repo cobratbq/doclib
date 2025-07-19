@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"slices"
 	"strings"
 
 	"fyne.io/fyne/v2"
@@ -25,6 +26,12 @@ type interopType struct {
 	tags map[string]map[string]binding.Bool
 }
 
+func extractRepoObjectList(docrepo *repo.Repo) []repo.RepoObj {
+	repoObjs := builtin.Expect(docrepo.List())
+	slices.SortFunc(repoObjs, func(a, b repo.RepoObj) int { return strings.Compare(a.Name, b.Name) })
+	return repoObjs
+}
+
 func generateTagsContainer(group string, interop *interopType, docrepo *repo.Repo) *fyne.Container {
 	lblTag := widget.NewLabel(strings.ToTitle(group) + ":")
 	lblTag.TextStyle.Italic = true
@@ -37,13 +44,13 @@ func generateTagsContainer(group string, interop *interopType, docrepo *repo.Rep
 }
 
 func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
-	repoObjs := builtin.Expect(docrepo.List())
+	objects := extractRepoObjectList(docrepo)
 	// TODO needs smaller font, more suitable theme, or plain (unthemed) widgets.
-	listObjects := widget.NewList(func() int { return len(repoObjs) }, func() fyne.CanvasObject {
+	listObjects := widget.NewList(func() int { return len(objects) }, func() fyne.CanvasObject {
 		// note: dictate size with wide initial label text at creation
 		return widget.NewLabel("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
 	}, func(id widget.ListItemID, obj fyne.CanvasObject) {
-		obj.(*widget.Label).SetText(repoObjs[id].Props[repo.PROP_NAME])
+		obj.(*widget.Label).SetText(objects[id].Name)
 	})
 	// TODO now needs to be sync with repo.Props() list
 	interop := interopType{id: -1, hash: binding.NewString(), name: binding.NewString(), tags: map[string]map[string]binding.Bool{}}
@@ -66,18 +73,17 @@ func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 	inputName := widget.NewEntryWithData(interop.name)
 	inputName.Scroll = fyne.ScrollHorizontalOnly
 	btnUpdate := widget.NewButton("Update", func() {
-		repoObjs[interop.id].Props[repo.PROP_HASH] = builtin.Expect(interop.hash.Get())
-		repoObjs[interop.id].Props[repo.PROP_NAME] = builtin.Expect(interop.name.Get())
+		objects[interop.id].Name = builtin.Expect(interop.name.Get())
 		for cat, tags := range interop.tags {
 			for k, v := range tags {
 				if builtin.Expect(v.Get()) {
-					set.Insert(repoObjs[interop.id].Tags[cat], k)
+					set.Insert(objects[interop.id].Tags[cat], k)
 				} else {
-					set.Remove(repoObjs[interop.id].Tags[cat], k)
+					set.Remove(objects[interop.id].Tags[cat], k)
 				}
 			}
 		}
-		if err := docrepo.Save(repoObjs[interop.id]); err != nil {
+		if err := docrepo.Save(objects[interop.id]); err != nil {
 			log.Traceln("Failed to save repo-object:", err.Error())
 			lblStatus.SetText("Failed to save updated properties: " + err.Error())
 		}
@@ -101,8 +107,8 @@ func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 				log.Traceln("Failed to copy document into repository:", err.Error())
 				lblStatus.SetText("Failed to import document into repository: " + err.Error())
 			}
-			// FIXME quick & dirty solution to refreshing the list after adding a document.
-			repoObjs = builtin.Expect(docrepo.List())
+			// TODO quick & dirty solution to refreshing the list after adding a document.
+			objects = extractRepoObjectList(docrepo)
 			listObjects.Refresh()
 			log.Traceln("Document import completed.")
 		}, parent)
@@ -129,21 +135,14 @@ func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 	// FIXME support deselecting, zero selections, appropriately clearing values
 	listObjects.OnSelected = func(id widget.ListItemID) {
 		interop.id = id
-		interop.hash.Set(repoObjs[id].Props[repo.PROP_HASH])
-		interop.name.Set(repoObjs[id].Props[repo.PROP_NAME])
+		interop.hash.Set(objects[id].Id)
+		interop.name.Set(objects[id].Name)
 		for cat, tags := range interop.tags {
 			for k, v := range tags {
-				_, ok := repoObjs[id].Tags[cat][k]
+				_, ok := objects[id].Tags[cat][k]
 				v.Set(ok)
 			}
 		}
-		//for _, cat := range docrepo.Categories() {
-		//	interop.tags[cat] = map[string]binding.Bool{}
-		//	for t := range repoObjs[id].Tags[cat] {
-		//		interop.tags[cat][t].Set()
-		//		set.Insert(interop.tags[cat], t)
-		//	}
-		//}
 	}
 	return container.NewBorder(nil, lblStatus, nil, nil,
 		container.NewBorder(
