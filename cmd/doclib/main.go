@@ -29,8 +29,8 @@ func generateTagsContainer(group string, interop *interopType, docrepo *repo.Rep
 	lblTag := widget.NewLabel(strings.ToTitle(group) + ":")
 	lblTag.TextStyle.Italic = true
 	containerTags := container.NewVBox()
-	for _, e := range docrepo.Tags(group) {
-		chk := widget.NewCheckWithData(e, interop.tags[group][e])
+	for _, tag := range docrepo.Tags(group) {
+		chk := widget.NewCheckWithData(tag.Title, interop.tags[group][tag.Key])
 		containerTags.Add(chk)
 	}
 	return containerTags
@@ -50,7 +50,7 @@ func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 	for _, cat := range docrepo.Categories() {
 		interop.tags[cat] = map[string]binding.Bool{}
 		for _, tag := range docrepo.Tags(cat) {
-			interop.tags[cat][tag] = binding.NewBool()
+			interop.tags[cat][tag.Key] = binding.NewBool()
 		}
 	}
 	lblStatus := widget.NewLabel("")

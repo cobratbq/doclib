@@ -48,10 +48,15 @@ func isStandardDir(name string) bool {
 	return name == SUBDIR_REPO || name == SECTION_TITLES
 }
 
+type Tag struct {
+	Key   string
+	Title string
+}
+
 type Repo struct {
 	location string
 	props    []string
-	cats     map[string][]string
+	cats     map[string][]Tag
 }
 
 func (r *Repo) repofilepath(path string) string {
@@ -72,13 +77,13 @@ func (r *Repo) temprepofile() (*os.File, string, error) {
 }
 
 // TODO consider renaming 'titles' to 'archive' or 'all' or something, to indicate that it lists all documents
-func listOptions(location string) ([]string, error) {
+func listOptions(location string) ([]Tag, error) {
 	if entries, err := os.ReadDir(location); err != nil {
 		return nil, errors.Context(err, "directory missing for tag-group: "+location)
 	} else {
-		var index []string
+		index := []Tag{}
 		for _, e := range entries {
-			index = append(index, strings.ToLower(e.Name()))
+			index = append(index, Tag{Key: strings.ToLower(e.Name()), Title: e.Name()})
 		}
 		return index, nil
 	}
@@ -88,7 +93,7 @@ func listOptions(location string) ([]string, error) {
 func OpenRepo(location string) Repo {
 	// TODO move default name to template.properties
 	props := Props()
-	index := map[string][]string{}
+	index := map[string][]Tag{}
 	// FIXME do proper error handling
 	for _, e := range builtin.Expect(os.ReadDir(location)) {
 		if e.Name() == SUBDIR_REPO || e.Name() == SECTION_TITLES {
@@ -106,7 +111,8 @@ func (r *Repo) Categories() []string {
 	return keys
 }
 
-func (r *Repo) Tags(category string) []string {
+// Tags returns list of Tags (lower-cased identifier and a title, unchanged from the file system representation).
+func (r *Repo) Tags(category string) []Tag {
 	if index, ok := r.cats[category]; !ok {
 		return nil
 	} else {
