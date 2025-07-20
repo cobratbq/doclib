@@ -13,4 +13,4 @@ run:
 	go run $(BUILDARGS) ./cmd/doclib/main.go
 
 clean:
-	rm -f doclib
+	rm -f doclib doccli
