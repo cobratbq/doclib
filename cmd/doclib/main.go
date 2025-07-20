@@ -13,6 +13,7 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 	"github.com/cobratbq/doclib/internal/repo"
+	"github.com/cobratbq/goutils/assert"
 	"github.com/cobratbq/goutils/std/builtin"
 	"github.com/cobratbq/goutils/std/builtin/set"
 	io_ "github.com/cobratbq/goutils/std/io"
@@ -124,9 +125,13 @@ func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 					return
 				}
 				if err := docrepo.Delete(objects[interop.id].Id); err != nil {
+					log.Traceln("Repository object deletion failed:", err.Error())
 					lblStatus.SetText("Failed to delete object: " + err.Error())
 					return
 				}
+				objects = extractRepoObjectList(docrepo)
+				listObjects.Refresh()
+				log.Traceln("Repository object deleted.")
 				lblStatus.SetText("Repository object deleted.")
 			}, parent)
 		confirmDialog.SetConfirmText("Delete")
@@ -185,7 +190,8 @@ func main() {
 	// TODO needs an App ID
 	app := app.NewWithID("NeedsAnAppID")
 
-	docrepo := repo.OpenRepo(*flagRepo)
+	docrepo, err := repo.OpenRepo(*flagRepo)
+	assert.Success(err, "Failed to open repository at: "+*flagRepo)
 
 	mainwnd := app.NewWindow("Doclib")
 	mainwnd.SetPadded(false)

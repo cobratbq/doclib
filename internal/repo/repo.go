@@ -86,18 +86,20 @@ func listOptions(location string) ([]Tag, error) {
 }
 
 // FIXME does not check/create subdirs 'repo' and 'titles'
-func OpenRepo(location string) Repo {
-	// TODO move default name to template.properties
+func OpenRepo(location string) (Repo, error) {
 	index := map[string][]Tag{}
-	// FIXME do proper error handling
-	for _, e := range builtin.Expect(os.ReadDir(location)) {
-		if e.Name() == SUBDIR_REPO || e.Name() == SECTION_TITLES {
+	entries, err := os.ReadDir(location)
+	if err != nil {
+		return Repo{}, errors.Context(err, "open repository root-directory")
+	}
+	for _, e := range entries {
+		if !e.IsDir() || isStandardDir(e.Name()) {
 			continue
 		}
 		index[strings.ToLower(e.Name())] = builtin.Expect(listOptions(filepath.Join(location, e.Name())))
 	}
 	log.Traceln("Category-index:", index)
-	return Repo{location: location, cats: index}
+	return Repo{location: location, cats: index}, nil
 }
 
 func (r *Repo) Categories() []string {
@@ -122,7 +124,7 @@ func (r *Repo) checkTagsForObject(id, name string, tagCats map[string]map[string
 		return errors.Context(err, "failed to open root repository directory for tags processing")
 	}
 	for _, e := range entries {
-		if isStandardDir(e.Name()) {
+		if !e.IsDir() || isStandardDir(e.Name()) {
 			continue
 		}
 		// TODO we don't currently check if tag-names are used for which there exists no directory
@@ -136,16 +138,19 @@ func (r *Repo) checkTagsForObject(id, name string, tagCats map[string]map[string
 			continue
 		}
 		for _, t := range tagdirs {
+			if !t.IsDir() {
+				continue
+			}
 			path := filepath.Join(r.location, e.Name(), t.Name(), name)
-			_, tagExists := tags[strings.ToLower(t.Name())]
 			linkExists := os_.ExistsIsSymlink(path)
+			_, tagExists := tags[strings.ToLower(t.Name())]
 			switch {
 			case !tagExists && linkExists:
 				if err := os.Remove(path); err != nil {
 					log.Warnln("Failed to remove unexpected symlink", path, err.Error())
 				}
 			case tagExists && !linkExists:
-				if err := os.Symlink(filepath.Join("..", "..", SUBDIR_REPO, id), filepath.Join(r.location, e.Name(), t.Name(), name)); err != nil {
+				if err := os.Symlink(filepath.Join("..", "..", SUBDIR_REPO, id), path); err != nil {
 					log.Warnln("Failed to create missing symlink", path, err.Error())
 				}
 			}
@@ -157,11 +162,10 @@ func (r *Repo) checkTagsForObject(id, name string, tagCats map[string]map[string
 func (r *Repo) checkBrokenTags() error {
 	entries, err := os.ReadDir(r.location)
 	if err != nil {
-		return errors.Context(err, "failed to open root repository directory for tags processing")
+		return errors.Context(err, "failed to open repository root-directory for tags processing")
 	}
-	// FIXME add some sanity-checking such that we only remove broken symlinks
 	for _, e := range entries {
-		if isStandardDir(e.Name()) {
+		if !e.IsDir() || isStandardDir(e.Name()) {
 			continue
 		}
 		tagdirs, err := os.ReadDir(filepath.Join(r.location, e.Name()))
@@ -170,6 +174,9 @@ func (r *Repo) checkBrokenTags() error {
 			continue
 		}
 		for _, t := range tagdirs {
+			if !t.IsDir() {
+				continue
+			}
 			objlinks, err := os.ReadDir(filepath.Join(r.location, e.Name(), t.Name()))
 			if err != nil {
 				log.Warnln("Failed to read files in tag-directory:", err.Error())
@@ -180,10 +187,11 @@ func (r *Repo) checkBrokenTags() error {
 				if _, err := os.Stat(objlinkpath); err == nil {
 					continue
 				}
-				if err := os.Remove(objlinkpath); err != nil {
+				if err := os.Remove(objlinkpath); err == nil {
+					log.Traceln("Removed broken symlink at:", objlinkpath)
+				} else {
 					log.Warnln("Failed to remove broken symlink at:", objlinkpath)
 				}
-				log.Traceln("Removed broken symlink at:", objlinkpath)
 			}
 		}
 	}

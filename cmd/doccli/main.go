@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/cobratbq/doclib/internal/repo"
+	"github.com/cobratbq/goutils/assert"
 	"github.com/cobratbq/goutils/std/log"
 )
 
@@ -22,7 +23,8 @@ func parseFlags() config {
 }
 
 func cmdCheck(cfg *config) {
-	repo := repo.OpenRepo(cfg.location)
+	repo, err := repo.OpenRepo(cfg.location)
+	assert.Success(err, "Failed to open repository at location: "+cfg.location)
 	log.Infoln("Finished:", repo.Check())
 }
 
