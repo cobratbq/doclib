@@ -48,7 +48,7 @@ func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 	// TODO needs smaller font, more suitable theme, or plain (unthemed) widgets.
 	listObjects := widget.NewList(func() int { return len(objects) }, func() fyne.CanvasObject {
 		// note: dictate size with wide initial label text at creation
-		return widget.NewLabel("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
+		return widget.NewLabel("XXXXXXXXXXXXXXXXXXXXXXXXXX")
 	}, func(id widget.ListItemID, obj fyne.CanvasObject) {
 		obj.(*widget.Label).SetText(objects[id].Name)
 	})
@@ -129,7 +129,7 @@ func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 	for _, cat := range docrepo.Categories() {
 		containerCategory := generateTagsContainer(cat, &interop, docrepo)
 		categories[cat] = containerCategory
-		tabsTags.Items = append(tabsTags.Items, container.NewTabItem(strings.ToTitle(cat), containerCategory))
+		tabsTags.Items = append(tabsTags.Items, container.NewTabItem(strings.ToTitle(cat), container.NewVScroll(containerCategory)))
 	}
 	tabsTags.Refresh()
 	// FIXME support deselecting, zero selections, appropriately clearing values
@@ -144,9 +144,10 @@ func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 			}
 		}
 	}
-	return container.NewBorder(nil, lblStatus, nil, nil,
-		container.NewBorder(
-			nil, container.NewHBox(btnAcquire, btnCheck), listObjects, nil,
+	// TODO long-term, it seems the Tags-tabs don't optimally use vertical space yet.
+	return container.NewStack(container.NewHSplit(
+		container.NewBorder(nil, container.NewHBox(btnAcquire, btnCheck), nil, nil, listObjects),
+		container.NewBorder(nil, lblStatus, nil, nil,
 			container.NewBorder(
 				container.New(layout.NewFormLayout(),
 					lblHash, lblHashValue,
@@ -158,8 +159,7 @@ func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 				nil,
 				tabsTags,
 			),
-		),
-	)
+		)))
 }
 
 func main() {
