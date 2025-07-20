@@ -116,6 +116,22 @@ func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 		importDialog.SetTitleText("Import document into ")
 		importDialog.Show()
 	})
+	btnRemove := widget.NewButton("Remove", func() {
+		objname := objects[interop.id].Name
+		confirmDialog := dialog.NewConfirm("Remove repository object", "Do you want to remove "+objname+" from repository?",
+			func(b bool) {
+				if !b {
+					return
+				}
+				if err := docrepo.Delete(objects[interop.id].Id); err != nil {
+					lblStatus.SetText("Failed to delete object: " + err.Error())
+					return
+				}
+				lblStatus.SetText("Repository object deleted.")
+			}, parent)
+		confirmDialog.SetConfirmText("Delete")
+		confirmDialog.Show()
+	})
 	btnCheck := widget.NewButton("Check", func() {
 		// FIXME no error handling
 		if err := docrepo.Check(); err == nil {
@@ -146,7 +162,7 @@ func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 	}
 	// TODO long-term, it seems the Tags-tabs don't optimally use vertical space yet.
 	return container.NewStack(container.NewHSplit(
-		container.NewBorder(nil, container.NewHBox(btnAcquire, btnCheck), nil, nil, listObjects),
+		container.NewBorder(nil, container.NewHBox(btnAcquire, btnRemove, btnCheck), nil, nil, listObjects),
 		container.NewBorder(nil, lblStatus, nil, nil,
 			container.NewBorder(
 				container.New(layout.NewFormLayout(),

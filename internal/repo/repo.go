@@ -115,7 +115,7 @@ func (r *Repo) Tags(category string) []Tag {
 	}
 }
 
-func (r *Repo) checkTags(id, name string, tagCats map[string]map[string]struct{}) error {
+func (r *Repo) checkTagsForObject(id, name string, tagCats map[string]map[string]struct{}) error {
 	log.Traceln("Repo-object tags:", tagCats)
 	entries, err := os.ReadDir(r.location)
 	if err != nil {
@@ -148,6 +148,42 @@ func (r *Repo) checkTags(id, name string, tagCats map[string]map[string]struct{}
 				if err := os.Symlink(filepath.Join("..", "..", SUBDIR_REPO, id), filepath.Join(r.location, e.Name(), t.Name(), name)); err != nil {
 					log.Warnln("Failed to create missing symlink", path, err.Error())
 				}
+			}
+		}
+	}
+	return nil
+}
+
+func (r *Repo) checkBrokenTags() error {
+	entries, err := os.ReadDir(r.location)
+	if err != nil {
+		return errors.Context(err, "failed to open root repository directory for tags processing")
+	}
+	// FIXME add some sanity-checking such that we only remove broken symlinks
+	for _, e := range entries {
+		if isStandardDir(e.Name()) {
+			continue
+		}
+		tagdirs, err := os.ReadDir(filepath.Join(r.location, e.Name()))
+		if err != nil {
+			log.Warnln("Failed to open tag-directory for tag-group", e.Name())
+			continue
+		}
+		for _, t := range tagdirs {
+			objlinks, err := os.ReadDir(filepath.Join(r.location, e.Name(), t.Name()))
+			if err != nil {
+				log.Warnln("Failed to read files in tag-directory:", err.Error())
+				continue
+			}
+			for _, objlink := range objlinks {
+				objlinkpath := filepath.Join(r.location, e.Name(), t.Name(), objlink.Name())
+				if _, err := os.Stat(objlinkpath); err == nil {
+					continue
+				}
+				if err := os.Remove(objlinkpath); err != nil {
+					log.Warnln("Failed to remove broken symlink at:", objlinkpath)
+				}
+				log.Traceln("Removed broken symlink at:", objlinkpath)
 			}
 		}
 	}
@@ -226,7 +262,7 @@ func (r *Repo) Check() error {
 				if targetpath, err := os.Readlink(filepath.Join(r.location, SECTION_TITLES, o.Name)); err == nil && filepath.Base(targetpath) != e.Name() {
 					log.Warnln("Symlink does not point to expected repo-object. Duplicate names are in use:", targetpath)
 				}
-				if err := r.checkTags(o.Id, o.Name, o.Tags); err != nil {
+				if err := r.checkTagsForObject(o.Id, o.Name, o.Tags); err != nil {
 					log.Warnln("Failure during tags processing:", err.Error())
 				}
 			}
@@ -258,6 +294,12 @@ func (r *Repo) Check() error {
 			log.Traceln("Titles symlink does not have the correct document name. Removed.")
 		}
 	}
+
+	// FIXME how to handle result from checkBrokenTags, do we even care?
+	if err := r.checkBrokenTags(); err != nil {
+		log.Warnln("Result of checkBrokenTags:", err.Error())
+	}
+
 	// TODO count errors and report back
 	return nil
 }
@@ -305,6 +347,18 @@ func (r *Repo) Acquire(reader io.Reader, name string) (RepoObj, error) {
 	// TODO get RepoObj instance from writeProperties, instead of going through Open?
 	log.Traceln("Completed acquisition. (object: " + checksumhex + ")")
 	return r.Open(checksumhex)
+}
+
+func (r *Repo) Delete(id string) error {
+	path := r.repofilepath(id)
+	if err := os.Remove(path); err != nil {
+		return errors.Context(err, "Delete repository-object "+id)
+	}
+	if err := os.Remove(path + SUFFIX_PROPERTIES); err != nil {
+		log.Warnln("Failed to delete repo-object properties. Next check, orphaned properties-file will again be deleted.")
+	}
+	// TODO not yet deleting any symlinks, etc. These will already be deleted during check anyways.
+	return nil
 }
 
 // Save saves updated repo-object properties to the repository.
