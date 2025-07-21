@@ -88,6 +88,7 @@ func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 			log.Traceln("Failed to save repo-object:", err.Error())
 			lblStatus.SetText("Failed to save updated properties: " + err.Error())
 		}
+		listObjects.RefreshItem(interop.id)
 	})
 	btnAcquire := widget.NewButton("Acquire", func() {
 		importDialog := dialog.NewFileOpen(func(reader fyne.URIReadCloser, err error) {
