@@ -16,6 +16,7 @@ import (
 	"github.com/cobratbq/goutils/assert"
 	"github.com/cobratbq/goutils/std/builtin"
 	"github.com/cobratbq/goutils/std/builtin/set"
+	"github.com/cobratbq/goutils/std/errors"
 	io_ "github.com/cobratbq/goutils/std/io"
 	"github.com/cobratbq/goutils/std/log"
 )
@@ -25,6 +26,11 @@ type interopType struct {
 	hash binding.String
 	name binding.String
 	tags map[string]map[string]binding.Bool
+}
+
+// FIXME extend name validation to include illegal file-system symbols or do proper filtering before applying to file-system objects.
+func (i *interopType) valid() bool {
+	return i.id >= 0 && len(builtin.Expect(i.name.Get())) > 0
 }
 
 func extractRepoObjectList(docrepo *repo.Repo) []repo.RepoObj {
@@ -90,6 +96,15 @@ func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 		}
 		listObjects.RefreshItem(interop.id)
 	})
+	inputName.Validator = func(s string) error {
+		if interop.valid() {
+			btnUpdate.Enable()
+			return nil
+		} else {
+			btnUpdate.Disable()
+			return errors.ErrIllegal
+		}
+	}
 	btnAcquire := widget.NewButton("Acquire", func() {
 		importDialog := dialog.NewFileOpen(func(reader fyne.URIReadCloser, err error) {
 			if err != nil {
@@ -112,6 +127,7 @@ func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 			// TODO quick & dirty solution to refreshing the list after adding a document.
 			objects = extractRepoObjectList(docrepo)
 			listObjects.Refresh()
+			// TODO strictly speaking must unselect because item at <interop.id> could have changed, meaning that UI is outdated.
 			log.Traceln("Document import completed.")
 		}, parent)
 		importDialog.SetConfirmText("Import")
@@ -119,8 +135,11 @@ func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 		importDialog.Show()
 	})
 	btnRemove := widget.NewButton("Remove", func() {
+		if interop.id < 0 {
+			return
+		}
 		objname := objects[interop.id].Name
-		confirmDialog := dialog.NewConfirm("Remove repository object", "Do you want to remove "+objname+" from repository?",
+		confirmDialog := dialog.NewConfirm("Remove repository object", "Do you want to remove '"+objname+"'?",
 			func(b bool) {
 				if !b {
 					return
@@ -136,6 +155,7 @@ func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 				lblStatus.SetText("Repository object deleted.")
 			}, parent)
 		confirmDialog.SetConfirmText("Delete")
+		confirmDialog.SetDismissText("Cancel")
 		confirmDialog.Show()
 	})
 	btnCheck := widget.NewButton("Check", func() {
@@ -168,7 +188,7 @@ func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 	}
 	// TODO long-term, it seems the Tags-tabs don't optimally use vertical space yet.
 	return container.NewStack(container.NewHSplit(
-		container.NewBorder(nil, container.NewHBox(btnAcquire, btnRemove, btnCheck), nil, nil, listObjects),
+		container.NewBorder(nil, container.NewHBox(btnAcquire, btnRemove, layout.NewSpacer(), btnCheck), nil, nil, listObjects),
 		container.NewBorder(nil, lblStatus, nil, nil,
 			container.NewBorder(
 				container.New(layout.NewFormLayout(),
