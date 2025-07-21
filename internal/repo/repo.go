@@ -177,20 +177,40 @@ func (r *Repo) checkBrokenTags() error {
 			if !t.IsDir() {
 				continue
 			}
-			objlinks, err := os.ReadDir(filepath.Join(r.location, e.Name(), t.Name()))
+			links, err := os.ReadDir(filepath.Join(r.location, e.Name(), t.Name()))
 			if err != nil {
 				log.Warnln("Failed to read files in tag-directory:", err.Error())
 				continue
 			}
-			for _, objlink := range objlinks {
-				objlinkpath := filepath.Join(r.location, e.Name(), t.Name(), objlink.Name())
-				if _, err := os.Stat(objlinkpath); err == nil {
-					continue
-				}
-				if err := os.Remove(objlinkpath); err == nil {
-					log.Traceln("Removed broken symlink at:", objlinkpath)
+			for _, link := range links {
+				linkpath := filepath.Join(r.location, e.Name(), t.Name(), link.Name())
+				if _, err := os.Stat(linkpath); err == nil {
+					var repoobjpath string
+					if repoobjpath, err = os.Readlink(linkpath); err != nil {
+						log.Warnln("Failed to read repo-object path from symlink:", err.Error())
+						continue
+					}
+					var repoobj RepoObj
+					if repoobj, err = r.Open(filepath.Base(repoobjpath)); err != nil {
+						log.Warnln("Failed to open repo-object:", err.Error())
+						continue
+					}
+					if link.Name() != repoobj.Name {
+						// Symlink with (most likely) outdated name. Can be removed, as we would already
+						// (re)create the missing symlink if we wouldn't find it at the expected name.
+						if err = os.Remove(linkpath); err == nil {
+							log.Traceln("Removed symlink with incorrect name at:", linkpath)
+						} else {
+							log.Warnln("Failed to remove symlink with incorrect name at:", linkpath)
+						}
+					}
 				} else {
-					log.Warnln("Failed to remove broken symlink at:", objlinkpath)
+					// Remove broken symlink.
+					if err := os.Remove(linkpath); err == nil {
+						log.Traceln("Removed broken symlink at:", linkpath)
+					} else {
+						log.Warnln("Failed to remove broken symlink at:", linkpath)
+					}
 				}
 			}
 		}
