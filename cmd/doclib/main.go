@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"os/exec"
 	"slices"
 	"strings"
 
@@ -78,6 +79,13 @@ func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 	lblName.TextStyle.Italic = true
 	inputName := widget.NewEntryWithData(interop.name)
 	inputName.Scroll = fyne.ScrollHorizontalOnly
+	btnOpen := widget.NewButton("Open", func() {
+		cmd := exec.Command("xdg-open", docrepo.ObjectPath(objects[interop.id].Id))
+		if err := cmd.Start(); err != nil {
+			log.Warnln("Failed to start/open repository object:", err.Error())
+			return
+		}
+	})
 	btnUpdate := widget.NewButton("Update", func() {
 		objects[interop.id].Name = builtin.Expect(interop.name.Get())
 		for cat, tags := range interop.tags {
@@ -97,9 +105,11 @@ func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 	})
 	inputName.Validator = func(s string) error {
 		if interop.valid() {
+			btnOpen.Enable()
 			btnUpdate.Enable()
 			return nil
 		} else {
+			btnOpen.Disable()
 			btnUpdate.Disable()
 			return errors.ErrIllegal
 		}
@@ -126,11 +136,12 @@ func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 			// TODO quick & dirty solution to refreshing the list after adding a document.
 			objects = extractRepoObjectList(docrepo)
 			listObjects.Refresh()
-			// TODO strictly speaking must unselect because item at <interop.id> could have changed, meaning that UI is outdated.
+			listObjects.UnselectAll()
 			log.Traceln("Document import completed.")
 		}, parent)
 		importDialog.SetConfirmText("Import")
 		importDialog.SetTitleText("Import document into ")
+		importDialog.Resize(fyne.Size{Width: 800, Height: 600})
 		importDialog.Show()
 	})
 	btnRemove := widget.NewButton("Remove", func() {
@@ -173,7 +184,6 @@ func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 		tabsTags.Items = append(tabsTags.Items, container.NewTabItem(strings.ToTitle(cat), container.NewVScroll(containerCategory)))
 	}
 	tabsTags.Refresh()
-	// FIXME support deselecting, zero selections, appropriately clearing values
 	listObjects.OnSelected = func(id widget.ListItemID) {
 		interop.id = id
 		interop.hash.Set(objects[id].Id)
@@ -182,6 +192,16 @@ func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 			for k, v := range tags {
 				_, ok := objects[id].Tags[cat][k]
 				v.Set(ok)
+			}
+		}
+	}
+	listObjects.OnUnselected = func(id widget.ListItemID) {
+		interop.id = -1
+		interop.hash.Set("")
+		interop.name.Set("")
+		for _, tags := range interop.tags {
+			for _, v := range tags {
+				v.Set(false)
 			}
 		}
 	}
@@ -194,7 +214,7 @@ func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 				container.New(layout.NewFormLayout(),
 					lblHash, lblHashValue,
 					lblName, inputName,
-					layout.NewSpacer(), container.NewBorder(nil, nil, nil, btnUpdate, nil),
+					btnOpen, container.NewBorder(nil, nil, nil, btnUpdate, nil),
 				), nil, nil, nil,
 				tabsTags,
 			),
@@ -215,7 +235,7 @@ func main() {
 
 	mainwnd := app.NewWindow("Doclib")
 	mainwnd.SetPadded(false)
-	mainwnd.Resize(fyne.NewSize(640, 480))
+	mainwnd.Resize(fyne.NewSize(800, 600))
 	mainwnd.SetContent(constructUI(mainwnd, &docrepo))
 	//mainwnd.SetOnClosed(func() {})
 	mainwnd.ShowAndRun()

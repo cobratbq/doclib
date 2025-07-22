@@ -361,6 +361,7 @@ type RepoObj struct {
 	Tags  map[string]map[string]struct{}
 }
 
+// FIXME consider what to do when freshly written object already has '.properties' file. This likely means duplicate import, meaning that present properties may very well be better than starting fresh.
 func (r *Repo) Acquire(reader io.Reader, name string) (RepoObj, error) {
 	log.Traceln("Acquiring new document into repository…")
 	tempf, tempfname, err := r.temprepofile()
@@ -402,6 +403,10 @@ func (r *Repo) Delete(id string) error {
 func (r *Repo) Save(obj RepoObj) error {
 	// FIXME update symlinks?
 	return r.writeProperties(obj.Id, obj.Name, obj.Tags)
+}
+
+func (r *Repo) ObjectPath(objname string) string {
+	return r.repofilepath(objname)
 }
 
 func (r *Repo) Open(objname string) (RepoObj, error) {
