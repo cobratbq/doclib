@@ -351,7 +351,7 @@ func (r *Repo) writeProperties(objname, name string, tags map[string]map[string]
 		slices.Sort(t)
 		buffer = append(buffer, []byte(PROP_PREFIX_TAGS+group+"="+strings.Join(t, ",")+"\n")...)
 	}
-	return os.WriteFile(r.repofilepath(objname)+SUFFIX_PROPERTIES, buffer, 0600)
+	return os.WriteFile(r.repofilepath(objname)+SUFFIX_PROPERTIES, buffer, 0o600)
 }
 
 type RepoObj struct {
@@ -376,7 +376,7 @@ func (r *Repo) Acquire(reader io.Reader, name string) (RepoObj, error) {
 	}
 	checksumhex := hex.EncodeToString(fhash.Sum(nil))
 	log.Traceln("checksum:", checksumhex)
-	if err := os.Chmod(tempfname, 0400); err != nil {
+	if err := os.Chmod(tempfname, 0o400); err != nil {
 		log.Warnln("Failed to make new repository object read-only:", err.Error())
 	}
 	if err := os.Rename(tempfname, r.repofilepath(checksumhex)); err != nil {
