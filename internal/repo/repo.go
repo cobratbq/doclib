@@ -376,6 +376,9 @@ func (r *Repo) Acquire(reader io.Reader, name string) (RepoObj, error) {
 	}
 	checksumhex := hex.EncodeToString(fhash.Sum(nil))
 	log.Traceln("checksum:", checksumhex)
+	if err := os.Chmod(tempfname, 0400); err != nil {
+		log.Warnln("Failed to make new repository object read-only:", err.Error())
+	}
 	if err := os.Rename(tempfname, r.repofilepath(checksumhex)); err != nil {
 		return RepoObj{}, errors.Context(err, "failed to move temporary file '"+tempfname+"' to definite repo-object location '"+checksumhex+"'")
 	}
