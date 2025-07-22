@@ -146,11 +146,15 @@ func (r *Repo) checkTagsForObject(id, name string, tagCats map[string]map[string
 			_, tagExists := tags[strings.ToLower(t.Name())]
 			switch {
 			case !tagExists && linkExists:
-				if err := os.Remove(path); err != nil {
+				if err := os.Remove(path); err == nil {
+					log.Debugln("Removed symlink for untagged object at:", path)
+				} else {
 					log.Warnln("Failed to remove unexpected symlink", path, err.Error())
 				}
 			case tagExists && !linkExists:
-				if err := os.Symlink(filepath.Join("..", "..", SUBDIR_REPO, id), path); err != nil {
+				if err := os.Symlink(filepath.Join("..", "..", SUBDIR_REPO, id), path); err == nil {
+					log.Debugln("Created symlink for tagged object at:", path)
+				} else {
 					log.Warnln("Failed to create missing symlink", path, err.Error())
 				}
 			}
@@ -159,7 +163,7 @@ func (r *Repo) checkTagsForObject(id, name string, tagCats map[string]map[string
 	return nil
 }
 
-func (r *Repo) checkBrokenTags() error {
+func (r *Repo) checkBadTags() error {
 	entries, err := os.ReadDir(r.location)
 	if err != nil {
 		return errors.Context(err, "failed to open repository root-directory for tags processing")
@@ -168,6 +172,7 @@ func (r *Repo) checkBrokenTags() error {
 		if !e.IsDir() || isStandardDir(e.Name()) {
 			continue
 		}
+		log.Traceln("Processing tag-category '" + e.Name() + "'…")
 		tagdirs, err := os.ReadDir(filepath.Join(r.location, e.Name()))
 		if err != nil {
 			log.Warnln("Failed to open tag-directory for tag-group", e.Name())
@@ -177,12 +182,14 @@ func (r *Repo) checkBrokenTags() error {
 			if !t.IsDir() {
 				continue
 			}
+			log.Traceln("Processing tag '" + t.Name() + "' in category '" + e.Name() + "'…")
 			links, err := os.ReadDir(filepath.Join(r.location, e.Name(), t.Name()))
 			if err != nil {
 				log.Warnln("Failed to read files in tag-directory:", err.Error())
 				continue
 			}
 			for _, link := range links {
+				log.Traceln("Processing symlink '" + link.Name() + "'…")
 				linkpath := filepath.Join(r.location, e.Name(), t.Name(), link.Name())
 				if _, err := os.Stat(linkpath); err == nil {
 					var repoobjpath string
@@ -199,7 +206,7 @@ func (r *Repo) checkBrokenTags() error {
 						// Symlink with (most likely) outdated name. Can be removed, as we would already
 						// (re)create the missing symlink if we wouldn't find it at the expected name.
 						if err = os.Remove(linkpath); err == nil {
-							log.Traceln("Removed symlink with incorrect name at:", linkpath)
+							log.Debugln("Removed symlink with incorrect name at:", linkpath)
 						} else {
 							log.Warnln("Failed to remove symlink with incorrect name at:", linkpath)
 						}
@@ -207,7 +214,7 @@ func (r *Repo) checkBrokenTags() error {
 				} else {
 					// Remove broken symlink.
 					if err := os.Remove(linkpath); err == nil {
-						log.Traceln("Removed broken symlink at:", linkpath)
+						log.Debugln("Removed broken symlink at:", linkpath)
 					} else {
 						log.Warnln("Failed to remove broken symlink at:", linkpath)
 					}
@@ -243,7 +250,7 @@ func (r *Repo) Check() error {
 				if err := os.Remove(r.repofilepath(e.Name())); err != nil {
 					log.Warnln("Failed to remove orphaned properties-file '"+e.Name()+"' from repository:", err.Error())
 				} else {
-					log.Traceln("Removed orphaned properties-file:", e.Name())
+					log.Debugln("Removed orphaned properties-file:", e.Name())
 				}
 			} else if info.Mode()&os.ModeType != 0 {
 				log.Warnln("Corresponding file-system object is not a regular file:", info.Name())
@@ -255,7 +262,7 @@ func (r *Repo) Check() error {
 			if err = os.Remove(r.repofilepath(e.Name())); err != nil {
 				log.Warnln("Failed to remove old temporary file '"+e.Name()+"':", err.Error())
 			} else {
-				log.Traceln("Removed temporary file:", e.Name())
+				log.Debugln("Removed temporary file:", e.Name())
 			}
 			continue
 		}
@@ -276,23 +283,22 @@ func (r *Repo) Check() error {
 			if o.Id != e.Name() {
 				log.Warnln(e.Name(), ": invalid properties", e.Name(), o.Id)
 			}
-			if info, err := os.Lstat(filepath.Join(r.location, SECTION_TITLES, o.Name)); err != nil {
+			titlepath := filepath.Join(r.location, SECTION_TITLES, o.Name)
+			if info, err := os.Lstat(titlepath); err != nil {
 				// Create symlink when one does not exist under the correct name as stated in the properties.
 				// Next we will remove symlinks that refer to repo-objects that have a different name-prop.
-				if err := os.Symlink(filepath.Join("..", SUBDIR_REPO, e.Name()), filepath.Join(r.location, SECTION_TITLES, o.Name)); err != nil {
-					log.Warnln(e.Name(), ": failed to create symlink at expected location:", err.Error())
+				if err := os.Symlink(filepath.Join("..", SUBDIR_REPO, e.Name()), titlepath); err != nil {
+					log.Warnln(e.Name(), ": failed to create symlink at:", titlepath, err.Error())
 				} else {
-					log.Traceln(e.Name(), ": missing symlink in document titles recreated.")
+					log.Debugln(e.Name(), ": missing symlink in document titles recreated at:", titlepath)
 				}
 			} else if info.Mode()&os.ModeSymlink == 0 {
 				log.Warnln(info.Name(), ": a foreign file-system object was found where a symlink to a repo-object was expected.")
-			} else {
-				if targetpath, err := os.Readlink(filepath.Join(r.location, SECTION_TITLES, o.Name)); err == nil && filepath.Base(targetpath) != e.Name() {
-					log.Warnln("Symlink does not point to expected repo-object. Duplicate names are in use:", targetpath)
-				}
-				if err := r.checkTagsForObject(o.Id, o.Name, o.Tags); err != nil {
-					log.Warnln("Failure during tags processing:", err.Error())
-				}
+			} else if targetpath, err := os.Readlink(titlepath); err == nil && filepath.Base(targetpath) != e.Name() {
+				log.Warnln("Symlink does not point to expected repo-object. Duplicate names are in use:", targetpath)
+			}
+			if err := r.checkTagsForObject(o.Id, o.Name, o.Tags); err != nil {
+				log.Warnln("Failure during tags processing:", err.Error())
 			}
 		}
 	}
@@ -310,21 +316,23 @@ func (r *Repo) Check() error {
 			log.Traceln("titles symlink does not correctly link to repo-object. Deleting…")
 			if err := os.Remove(path); err != nil {
 				log.Warnln("Failed to delete broken symlink in titles:", err.Error())
+				continue
 			}
-			log.Traceln("Broken symlink in titles successfully removed.", path)
+			log.Debugln("Broken symlink in titles successfully removed.", path)
 		} else if obj.Name != e.Name() {
 			log.Traceln("Titles document name does not match with 'name' property. Removing…")
 			// Previously, we created symlinks when they don't exist at expected name. Now we remove existing
 			// symlinks which refer to repo-objects with a different name.
 			if err := os.Remove(path); err != nil {
 				log.Warnln(e.Name(), ": failed to rename object to proper name:", err.Error())
+				continue
 			}
-			log.Traceln("Titles symlink does not have the correct document name. Removed.")
+			log.Debugln("Titles symlink does not have the correct document name. Removed.")
 		}
 	}
 
-	// FIXME how to handle result from checkBrokenTags, do we even care?
-	if err := r.checkBrokenTags(); err != nil {
+	// FIXME how to handle result from checkBadTags, do we even care?
+	if err := r.checkBadTags(); err != nil {
 		log.Warnln("Result of checkBrokenTags:", err.Error())
 	}
 
