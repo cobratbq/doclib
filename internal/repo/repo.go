@@ -297,6 +297,7 @@ func (r *Repo) Check() error {
 			} else if targetpath, err := os.Readlink(titlepath); err == nil && filepath.Base(targetpath) != e.Name() {
 				log.Warnln("Symlink does not point to expected repo-object. Duplicate names are in use:", targetpath)
 			}
+			// Verify symlinks for tags that are expected for this specific object.
 			if err := r.checkTagsForObject(o.Id, o.Name, o.Tags); err != nil {
 				log.Warnln("Failure during tags processing:", err.Error())
 			}

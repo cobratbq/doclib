@@ -59,7 +59,6 @@ func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 	}, func(id widget.ListItemID, obj fyne.CanvasObject) {
 		obj.(*widget.Label).SetText(objects[id].Name)
 	})
-	// TODO now needs to be sync with repo.Props() list
 	interop := interopType{id: -1, hash: binding.NewString(), name: binding.NewString(), tags: map[string]map[string]binding.Bool{}}
 	for _, cat := range docrepo.Categories() {
 		interop.tags[cat] = map[string]binding.Bool{}
@@ -187,21 +186,21 @@ func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 		}
 	}
 	// TODO long-term, it seems the Tags-tabs don't optimally use vertical space yet.
-	return container.NewStack(container.NewHSplit(
-		container.NewBorder(nil, container.NewHBox(btnAcquire, btnRemove, layout.NewSpacer(), btnCheck), nil, nil, listObjects),
+	split := container.NewHSplit(
+		container.NewBorder(nil, container.NewHBox(btnAcquire, btnRemove, layout.NewSpacer(), btnCheck), nil, nil,
+			listObjects),
 		container.NewBorder(nil, lblStatus, nil, nil,
 			container.NewBorder(
 				container.New(layout.NewFormLayout(),
 					lblHash, lblHashValue,
 					lblName, inputName,
 					layout.NewSpacer(), container.NewBorder(nil, nil, nil, btnUpdate, nil),
-				),
-				nil,
-				nil,
-				nil,
+				), nil, nil, nil,
 				tabsTags,
 			),
-		)))
+		))
+	split.SetOffset(0.3)
+	return container.NewStack(split)
 }
 
 func main() {
