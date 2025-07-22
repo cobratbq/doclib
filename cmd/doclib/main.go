@@ -51,6 +51,7 @@ func generateTagsContainer(group string, interop *interopType, docrepo *repo.Rep
 	return containerTags
 }
 
+// TODO consider adding button to reload repository information, and rebuild tags/checkboxes lists with updated dirs/sub-dirs/content.
 func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 	objects := extractRepoObjectList(docrepo)
 	// TODO needs smaller font, more suitable theme, or plain (unthemed) widgets.
