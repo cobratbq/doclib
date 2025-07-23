@@ -3,7 +3,6 @@ package main
 import (
 	"flag"
 	"os/exec"
-	"slices"
 	"strings"
 
 	"fyne.io/fyne/v2"
@@ -34,12 +33,6 @@ func (i *interopType) valid() bool {
 	return i.id >= 0 && len(builtin.Expect(i.name.Get())) > 0
 }
 
-func extractRepoObjectList(docrepo *repo.Repo) []repo.RepoObj {
-	repoObjs := builtin.Expect(docrepo.List())
-	slices.SortFunc(repoObjs, func(a, b repo.RepoObj) int { return strings.Compare(a.Name, b.Name) })
-	return repoObjs
-}
-
 func generateTagsContainer(group string, interop *interopType, docrepo *repo.Repo) *fyne.Container {
 	lblTag := widget.NewLabel(strings.ToTitle(group) + ":")
 	lblTag.TextStyle.Italic = true
@@ -53,7 +46,7 @@ func generateTagsContainer(group string, interop *interopType, docrepo *repo.Rep
 
 // TODO consider adding button to reload repository information, and rebuild tags/checkboxes lists with updated dirs/sub-dirs/content.
 func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
-	objects := extractRepoObjectList(docrepo)
+	objects := repo.ExtractRepoObjectsSorted(docrepo)
 	// TODO needs smaller font, more suitable theme, or plain (unthemed) widgets.
 	listObjects := widget.NewList(func() int { return len(objects) }, func() fyne.CanvasObject {
 		// note: dictate size with wide initial label text at creation
@@ -128,16 +121,18 @@ func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 				return
 			}
 			defer io_.CloseLogged(reader, "Failed to gracefully close file.")
-			if _, err = docrepo.Acquire(reader, reader.URI().Name()); err == nil {
+			if newobj, err := docrepo.Acquire(reader, reader.URI().Name()); err == nil {
 				log.Traceln("File-dialog successfully completed.")
+				objects = repo.ExtractRepoObjectsSorted(docrepo)
+				listObjects.UnselectAll()
+				listObjects.Refresh()
+				if id := repo.IndexObjectByID(objects, newobj.Id); id >= 0 {
+					listObjects.Select(id)
+				}
 			} else {
 				log.Traceln("Failed to copy document into repository:", err.Error())
 				lblStatus.SetText("Failed to import document into repository: " + err.Error())
 			}
-			// TODO quick & dirty solution to refreshing the list after adding a document.
-			objects = extractRepoObjectList(docrepo)
-			listObjects.Refresh()
-			listObjects.UnselectAll()
 			log.Traceln("Document import completed.")
 		}, parent)
 		importDialog.SetConfirmText("Import")
@@ -160,7 +155,8 @@ func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 					lblStatus.SetText("Failed to delete object: " + err.Error())
 					return
 				}
-				objects = extractRepoObjectList(docrepo)
+				objects = repo.ExtractRepoObjectsSorted(docrepo)
+				listObjects.UnselectAll()
 				listObjects.Refresh()
 				log.Traceln("Repository object deleted.")
 				lblStatus.SetText("Repository object deleted.")
