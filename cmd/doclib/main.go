@@ -108,7 +108,7 @@ func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 			return errors.ErrIllegal
 		}
 	}
-	btnAcquire := widget.NewButton("Acquire", func() {
+	btnImport := widget.NewButton("Import", func() {
 		importDialog := dialog.NewFileOpen(func(reader fyne.URIReadCloser, err error) {
 			if err != nil {
 				log.Warnln("Error opening file-dialog: ", err.Error())
@@ -204,7 +204,7 @@ func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 	}
 	// TODO long-term, it seems the Tags-tabs don't optimally use vertical space yet.
 	split := container.NewHSplit(
-		container.NewBorder(nil, container.NewHBox(btnAcquire, btnRemove, layout.NewSpacer(), btnCheck), nil, nil,
+		container.NewBorder(nil, container.NewHBox(btnImport, btnRemove, layout.NewSpacer(), btnCheck), nil, nil,
 			listObjects),
 		container.NewBorder(nil, lblStatus, nil, nil,
 			container.NewBorder(
