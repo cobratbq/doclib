@@ -46,7 +46,7 @@ func generateTagsContainer(group string, interop *interopType, docrepo *repo.Rep
 }
 
 // TODO consider adding button to reload repository information, and rebuild tags/checkboxes lists with updated dirs/sub-dirs/content.
-func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
+func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 	objects := repo.ExtractRepoObjectsSorted(docrepo)
 	// TODO needs smaller font, more suitable theme, or plain (unthemed) widgets.
 	listObjects := widget.NewList(func() int { return len(objects) }, func() fyne.CanvasObject {
@@ -71,7 +71,7 @@ func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 	lblHashValue.Bind(interop.hash)
 	lblHashValue.Truncation = fyne.TextTruncateEllipsis
 	btnCopyHash := widget.NewButtonWithIcon("", theme.ContentCopyIcon(), func() {
-		app.New().Clipboard().SetContent(objects[interop.id].Id)
+		app.Clipboard().SetContent(objects[interop.id].Id)
 	})
 	lblName := widget.NewLabel("name:")
 	lblName.TextStyle.Italic = true
@@ -237,7 +237,7 @@ func main() {
 	mainwnd := app.NewWindow("Doclib")
 	mainwnd.SetPadded(false)
 	mainwnd.Resize(fyne.NewSize(800, 600))
-	mainwnd.SetContent(constructUI(mainwnd, &docrepo))
+	mainwnd.SetContent(constructUI(app, mainwnd, &docrepo))
 	//mainwnd.SetOnClosed(func() {})
 	mainwnd.ShowAndRun()
 }
