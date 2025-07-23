@@ -272,6 +272,10 @@ func (r *Repo) Check() error {
 		} else if e.Name() != hex.EncodeToString(checksum) {
 			log.Warnln("Repo-object '" + e.Name() + "': checksum does not match. Possible corruption. (checksum: " + hex.EncodeToString(checksum) + ")")
 		}
+		// Checking file-permissions for writability.
+		if info, err := os.Stat(r.repofilepath(e.Name())); err == nil && info.Mode()&0o222 != 0 {
+			log.Warnln(e.Name(), ": is writable, which should not be the case for (immutable) repository-objects.")
+		}
 		// Checking characteristics of file properties.
 		if info, err := os.Stat(r.repofilepath(e.Name() + SUFFIX_PROPERTIES)); err != nil {
 			log.Warnln(e.Name()+SUFFIX_PROPERTIES, ": properties-file is missing.")
