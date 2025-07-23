@@ -70,6 +70,9 @@ func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 	lblHashValue := widget.NewLabel("")
 	lblHashValue.Bind(interop.hash)
 	lblHashValue.Truncation = fyne.TextTruncateEllipsis
+	btnCopyHash := widget.NewButtonWithIcon("", theme.ContentCopyIcon(), func() {
+		app.New().Clipboard().SetContent(objects[interop.id].Id)
+	})
 	lblName := widget.NewLabel("name:")
 	lblName.TextStyle.Italic = true
 	inputName := widget.NewEntryWithData(interop.name)
@@ -210,7 +213,7 @@ func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 		container.NewBorder(nil, lblStatus, nil, nil,
 			container.NewBorder(
 				container.New(layout.NewFormLayout(),
-					lblHash, lblHashValue,
+					lblHash, container.NewBorder(nil, nil, nil, btnCopyHash, lblHashValue),
 					lblName, inputName,
 					layout.NewSpacer(), container.NewBorder(nil, nil, nil, container.NewHBox(btnOpen, btnUpdate), nil),
 				), nil, nil, nil,
