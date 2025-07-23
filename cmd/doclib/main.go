@@ -122,18 +122,18 @@ func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 			}
 			defer io_.CloseLogged(reader, "Failed to gracefully close file.")
 			if newobj, err := docrepo.Acquire(reader, reader.URI().Name()); err == nil {
-				log.Traceln("File-dialog successfully completed.")
+				log.Traceln("Import-dialog successfully completed.")
 				objects = repo.ExtractRepoObjectsSorted(docrepo)
 				listObjects.UnselectAll()
 				listObjects.Refresh()
 				if id := repo.IndexObjectByID(objects, newobj.Id); id >= 0 {
 					listObjects.Select(id)
 				}
+				log.Traceln("Document import completed.")
 			} else {
 				log.Traceln("Failed to copy document into repository:", err.Error())
 				lblStatus.SetText("Failed to import document into repository: " + err.Error())
 			}
-			log.Traceln("Document import completed.")
 		}, parent)
 		importDialog.SetConfirmText("Import")
 		importDialog.SetTitleText("Import document into ")
