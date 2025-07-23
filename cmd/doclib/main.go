@@ -11,6 +11,7 @@ import (
 	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	"github.com/cobratbq/doclib/internal/repo"
 	"github.com/cobratbq/goutils/assert"
@@ -73,14 +74,14 @@ func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 	lblName.TextStyle.Italic = true
 	inputName := widget.NewEntryWithData(interop.name)
 	inputName.Scroll = fyne.ScrollHorizontalOnly
-	btnOpen := widget.NewButton("Open", func() {
+	btnOpen := widget.NewButtonWithIcon("", theme.MediaPlayIcon(), func() {
 		cmd := exec.Command("xdg-open", docrepo.ObjectPath(objects[interop.id].Id))
 		if err := cmd.Start(); err != nil {
 			log.Warnln("Failed to start/open repository object:", err.Error())
 			return
 		}
 	})
-	btnUpdate := widget.NewButton("Update", func() {
+	btnUpdate := widget.NewButtonWithIcon("Update", theme.ConfirmIcon(), func() {
 		objects[interop.id].Name = builtin.Expect(interop.name.Get())
 		for cat, tags := range interop.tags {
 			for k, v := range tags {
@@ -108,7 +109,7 @@ func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 			return errors.ErrIllegal
 		}
 	}
-	btnImport := widget.NewButton("Import", func() {
+	btnImport := widget.NewButtonWithIcon("Import", theme.ContentAddIcon(), func() {
 		importDialog := dialog.NewFileOpen(func(reader fyne.URIReadCloser, err error) {
 			if err != nil {
 				log.Warnln("Error opening file-dialog: ", err.Error())
@@ -140,7 +141,7 @@ func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 		importDialog.Resize(fyne.Size{Width: 800, Height: 600})
 		importDialog.Show()
 	})
-	btnRemove := widget.NewButton("Remove", func() {
+	btnRemove := widget.NewButtonWithIcon("Remove", theme.DeleteIcon(), func() {
 		if interop.id < 0 {
 			return
 		}
@@ -165,7 +166,7 @@ func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 		confirmDialog.SetDismissText("Cancel")
 		confirmDialog.Show()
 	})
-	btnCheck := widget.NewButton("Check", func() {
+	btnCheck := widget.NewButtonWithIcon("Check", theme.ViewRefreshIcon(), func() {
 		// FIXME no error handling
 		if err := docrepo.Check(); err == nil {
 			lblStatus.SetText("Check finished without errors.")
@@ -211,7 +212,7 @@ func constructUI(parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 				container.New(layout.NewFormLayout(),
 					lblHash, lblHashValue,
 					lblName, inputName,
-					btnOpen, container.NewBorder(nil, nil, nil, btnUpdate, nil),
+					layout.NewSpacer(), container.NewBorder(nil, nil, nil, container.NewHBox(btnOpen, btnUpdate), nil),
 				), nil, nil, nil,
 				tabsTags,
 			),
