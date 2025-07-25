@@ -225,6 +225,7 @@ func (r *Repo) checkBadTags() error {
 	return nil
 }
 
+// TODO add param and distinguish between reporting-only and fixing issues.
 func (r *Repo) Check() error {
 	var entries []os.DirEntry
 	var err error

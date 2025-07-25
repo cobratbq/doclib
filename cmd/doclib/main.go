@@ -144,7 +144,7 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 		importDialog.Resize(fyne.Size{Width: 800, Height: 600})
 		importDialog.Show()
 	})
-	btnRemove := widget.NewButtonWithIcon("Remove", theme.DeleteIcon(), func() {
+	btnRemove := widget.NewButtonWithIcon("", theme.DeleteIcon(), func() {
 		if interop.id < 0 {
 			return
 		}
