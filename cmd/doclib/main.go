@@ -84,7 +84,7 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 			return
 		}
 	})
-	btnUpdate := widget.NewButtonWithIcon("Update", theme.ConfirmIcon(), func() {
+	btnSave := widget.NewButtonWithIcon("Save", theme.ConfirmIcon(), func() {
 		objects[interop.id].Name = builtin.Expect(interop.name.Get())
 		for cat, tags := range interop.tags {
 			for k, v := range tags {
@@ -104,11 +104,11 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 	inputName.Validator = func(s string) error {
 		if interop.valid() {
 			btnOpen.Enable()
-			btnUpdate.Enable()
+			btnSave.Enable()
 			return nil
 		} else {
 			btnOpen.Disable()
-			btnUpdate.Disable()
+			btnSave.Disable()
 			return errors.ErrIllegal
 		}
 	}
@@ -215,7 +215,7 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 				container.New(layout.NewFormLayout(),
 					lblHash, container.NewBorder(nil, nil, nil, btnCopyHash, lblHashValue),
 					lblName, inputName,
-					layout.NewSpacer(), container.NewBorder(nil, nil, nil, container.NewHBox(btnOpen, btnUpdate), nil),
+					layout.NewSpacer(), container.NewBorder(nil, nil, nil, container.NewHBox(btnOpen, btnSave), nil),
 				), nil, nil, nil,
 				tabsTags,
 			),
