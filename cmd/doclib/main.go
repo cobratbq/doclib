@@ -74,6 +74,7 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 	btnCopyHash := widget.NewButtonWithIcon("", theme.ContentCopyIcon(), func() {
 		app.Clipboard().SetContent(objects[interop.id].Id)
 	})
+	btnCopyHash.Importance = widget.LowImportance
 	lblName := widget.NewLabel("name:")
 	lblName.TextStyle.Italic = true
 	inputName := widget.NewEntryWithData(interop.name)
@@ -83,13 +84,14 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 		// FIXME no error handling
 		if err := docrepo.Check(); err == nil {
 			lblStatus.SetText("Check finished without errors.")
-			btnCheck.Importance = widget.MediumImportance
+			btnCheck.Importance = widget.LowImportance
 		} else {
 			lblStatus.SetText("Check finished with errors: " + err.Error())
 			btnCheck.Importance = widget.WarningImportance
 		}
 		btnCheck.Refresh()
 	}
+	btnCheck.Importance = widget.LowImportance
 	btnOpen := widget.NewButtonWithIcon("", theme.MediaPlayIcon(), func() {
 		cmd := exec.Command("xdg-open", docrepo.ObjectPath(objects[interop.id].Id))
 		if err := cmd.Start(); err != nil {
@@ -184,6 +186,7 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 		confirmDialog.SetDismissText("Cancel")
 		confirmDialog.Show()
 	})
+	btnRemove.Importance = widget.LowImportance
 	tabsTags := container.NewAppTabs()
 	categories := map[string]*fyne.Container{}
 	for _, cat := range docrepo.Categories() {
