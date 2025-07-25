@@ -45,6 +45,7 @@ func generateTagsContainer(group string, interop *interopType, docrepo *repo.Rep
 	return containerTags
 }
 
+// TODO consider setting both importance and text for status-label upon changing status text (success, warnings).
 // TODO consider adding button to reload repository information, and rebuild tags/checkboxes lists with updated dirs/sub-dirs/content.
 func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 	objects := repo.ExtractRepoObjectsSorted(docrepo)
@@ -77,6 +78,18 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 	lblName.TextStyle.Italic = true
 	inputName := widget.NewEntryWithData(interop.name)
 	inputName.Scroll = fyne.ScrollHorizontalOnly
+	btnCheck := widget.NewButtonWithIcon("Check", theme.ViewRefreshIcon(), nil)
+	btnCheck.OnTapped = func() {
+		// FIXME no error handling
+		if err := docrepo.Check(); err == nil {
+			lblStatus.SetText("Check finished without errors.")
+			btnCheck.Importance = widget.MediumImportance
+		} else {
+			lblStatus.SetText("Check finished with errors: " + err.Error())
+			btnCheck.Importance = widget.WarningImportance
+		}
+		btnCheck.Refresh()
+	}
 	btnOpen := widget.NewButtonWithIcon("", theme.MediaPlayIcon(), func() {
 		cmd := exec.Command("xdg-open", docrepo.ObjectPath(objects[interop.id].Id))
 		if err := cmd.Start(); err != nil {
@@ -100,6 +113,8 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 			lblStatus.SetText("Failed to save updated properties: " + err.Error())
 		}
 		listObjects.RefreshItem(interop.id)
+		btnCheck.Importance = widget.HighImportance
+		btnCheck.Refresh()
 	})
 	inputName.Validator = func(s string) error {
 		if interop.valid() {
@@ -168,14 +183,6 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 		confirmDialog.SetConfirmText("Delete")
 		confirmDialog.SetDismissText("Cancel")
 		confirmDialog.Show()
-	})
-	btnCheck := widget.NewButtonWithIcon("Check", theme.ViewRefreshIcon(), func() {
-		// FIXME no error handling
-		if err := docrepo.Check(); err == nil {
-			lblStatus.SetText("Check finished without errors.")
-		} else {
-			lblStatus.SetText("Check finished with errors: " + err.Error())
-		}
 	})
 	tabsTags := container.NewAppTabs()
 	categories := map[string]*fyne.Container{}
