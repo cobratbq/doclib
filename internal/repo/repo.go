@@ -22,16 +22,16 @@ import (
 	"golang.org/x/crypto/blake2b"
 )
 
-const VERSION = "0"
-const SUBDIR_REPO = "repo"
-const PREFIX_REPO_TEMP = "temp--"
-const SUFFIX_PROPERTIES = ".properties"
-const PROP_VERSION = "version"
-const PROP_HASH = "hash"
-const PROP_HASHSPEC_PREFIX = "blake2b:"
-const PROP_NAME = "name"
-const PROP_PREFIX_TAGS = "tags."
-const SECTION_TITLES = "titles"
+const version = "0"
+const subdirRepo = "repo"
+const subdirTitles = "titles"
+const prefixRepoTemp = "temp--"
+const suffixProperties = ".properties"
+const propVersion = "version"
+const propHash = "hash"
+const propHashspecPrefix = "blake2b:"
+const propName = "name"
+const propTagsPrefix = "tags."
 
 func Hash(location string) ([64]byte, error) {
 	if hash, err := hash_.HashFile(builtin.Expect(blake2b.New512(nil)), location); err == nil {
@@ -42,7 +42,7 @@ func Hash(location string) ([64]byte, error) {
 }
 
 func isStandardDir(name string) bool {
-	return name == SUBDIR_REPO || name == SECTION_TITLES
+	return name == subdirRepo || name == subdirTitles
 }
 
 type Tag struct {
@@ -57,16 +57,16 @@ type Repo struct {
 
 func (r *Repo) repofilepath(path string) string {
 	if path == "" || path == "." {
-		return filepath.Join(r.location, SUBDIR_REPO)
+		return filepath.Join(r.location, subdirRepo)
 	}
-	return filepath.Join(r.location, SUBDIR_REPO, path)
+	return filepath.Join(r.location, subdirRepo, path)
 }
 
 func (r *Repo) temprepofile() (*os.File, string, error) {
 	var err error
 	var tempf *os.File
 	path := r.repofilepath("")
-	if tempf, err = os.CreateTemp(path, PREFIX_REPO_TEMP); err != nil {
+	if tempf, err = os.CreateTemp(path, prefixRepoTemp); err != nil {
 		return nil, "", errors.Context(err, "create temp file for acquisition")
 	}
 	return tempf, tempf.Name(), nil
@@ -83,6 +83,19 @@ func listOptions(location string) ([]Tag, error) {
 		}
 		return index, nil
 	}
+}
+
+func CreateRepo(location string) error {
+	if err := os.MkdirAll(location, 0o700); err != nil {
+		return errors.Context(err, "repository root directory")
+	}
+	if err := os.Mkdir(filepath.Join(location, subdirRepo), 0o700); err != nil {
+		return errors.Context(err, "repository '"+subdirRepo+"' subdirectory")
+	}
+	if err := os.Mkdir(filepath.Join(location, subdirTitles), 0o700); err != nil {
+		return errors.Context(err, "repository '"+subdirTitles+"' subdirectory")
+	}
+	return nil
 }
 
 // FIXME does not check/create subdirs 'repo' and 'titles'
@@ -152,7 +165,7 @@ func (r *Repo) checkTagsForObject(id, name string, tagCats map[string]map[string
 					log.Warnln("Failed to remove unexpected symlink", path, err.Error())
 				}
 			case tagExists && !linkExists:
-				if err := os.Symlink(filepath.Join("..", "..", SUBDIR_REPO, id), path); err == nil {
+				if err := os.Symlink(filepath.Join("..", "..", subdirRepo, id), path); err == nil {
 					log.Debugln("Created symlink for tagged object at:", path)
 				} else {
 					log.Warnln("Failed to create missing symlink", path, err.Error())
@@ -244,9 +257,9 @@ func (r *Repo) Check() error {
 			continue
 		}
 		// Check if properties-file has a corresponding repository object.
-		if strings.HasSuffix(e.Name(), SUFFIX_PROPERTIES) {
+		if strings.HasSuffix(e.Name(), suffixProperties) {
 			// properties-files are processed in conjuction with the corresponding binary file.
-			if info, err := os.Stat(r.repofilepath(strings.TrimSuffix(e.Name(), SUFFIX_PROPERTIES))); err != nil {
+			if info, err := os.Stat(r.repofilepath(strings.TrimSuffix(e.Name(), suffixProperties))); err != nil {
 				log.Infoln("Encountered properties-file without corresponding object-binary:", e.Name())
 				if err := os.Remove(r.repofilepath(e.Name())); err != nil {
 					log.Warnln("Failed to remove orphaned properties-file '"+e.Name()+"' from repository:", err.Error())
@@ -259,7 +272,7 @@ func (r *Repo) Check() error {
 			continue
 		}
 		// Remove abandoned temporary repository objects.
-		if strings.HasPrefix(e.Name(), PREFIX_REPO_TEMP) {
+		if strings.HasPrefix(e.Name(), prefixRepoTemp) {
 			if err = os.Remove(r.repofilepath(e.Name())); err != nil {
 				log.Warnln("Failed to remove old temporary file '"+e.Name()+"':", err.Error())
 			} else {
@@ -278,21 +291,21 @@ func (r *Repo) Check() error {
 			log.Warnln(e.Name(), ": is writable, which should not be the case for (immutable) repository-objects.")
 		}
 		// Checking characteristics of file properties.
-		if info, err := os.Stat(r.repofilepath(e.Name() + SUFFIX_PROPERTIES)); err != nil {
-			log.Warnln(e.Name()+SUFFIX_PROPERTIES, ": properties-file is missing.")
+		if info, err := os.Stat(r.repofilepath(e.Name() + suffixProperties)); err != nil {
+			log.Warnln(e.Name()+suffixProperties, ": properties-file is missing.")
 		} else if info.Mode()&os.ModeType != 0 {
-			log.Warnln(e.Name()+SUFFIX_PROPERTIES, ": properties-file is not a regular file.")
+			log.Warnln(e.Name()+suffixProperties, ": properties-file is not a regular file.")
 		} else if o, err := r.Open(e.Name()); err != nil {
 			log.Warnln(e.Name(), ": failed to parse properties: ", err.Error())
 		} else {
 			if o.Id != e.Name() {
 				log.Warnln(e.Name(), ": invalid properties", e.Name(), o.Id)
 			}
-			titlepath := filepath.Join(r.location, SECTION_TITLES, o.Name)
+			titlepath := filepath.Join(r.location, subdirTitles, o.Name)
 			if info, err := os.Lstat(titlepath); err != nil {
 				// Create symlink when one does not exist under the correct name as stated in the properties.
 				// Next we will remove symlinks that refer to repo-objects that have a different name-prop.
-				if err := os.Symlink(filepath.Join("..", SUBDIR_REPO, e.Name()), titlepath); err != nil {
+				if err := os.Symlink(filepath.Join("..", subdirRepo, e.Name()), titlepath); err != nil {
 					log.Warnln(e.Name(), ": failed to create symlink at:", titlepath, err.Error())
 				} else {
 					log.Debugln(e.Name(), ": missing symlink in document titles recreated at:", titlepath)
@@ -309,12 +322,12 @@ func (r *Repo) Check() error {
 		}
 	}
 
-	if entries, err = os.ReadDir(filepath.Join(r.location, SECTION_TITLES)); err != nil {
+	if entries, err = os.ReadDir(filepath.Join(r.location, subdirTitles)); err != nil {
 		return errors.Context(err, "failed to open directory with titles links")
 	}
 	for _, e := range entries {
 		log.Traceln("Processing titles-entry…", e.Name())
-		path := filepath.Join(r.location, SECTION_TITLES, e.Name())
+		path := filepath.Join(r.location, subdirTitles, e.Name())
 		if targetpath, err := os.Readlink(path); err != nil {
 			log.Warnln(e.Name(), ": failed to query symlink without error:", err.Error())
 		} else if obj, err := r.Open(filepath.Base(targetpath)); err != nil {
@@ -347,16 +360,16 @@ func (r *Repo) Check() error {
 }
 
 func (r *Repo) writeProperties(objname, name string, tags map[string]map[string]struct{}) error {
-	var buffer = []byte(PROP_VERSION + "=" + VERSION + "\n" + PROP_HASH + "=" + PROP_HASHSPEC_PREFIX + objname + "\n" + PROP_NAME + "=" + name + "\n")
+	var buffer = []byte(propVersion + "=" + version + "\n" + propHash + "=" + propHashspecPrefix + objname + "\n" + propName + "=" + name + "\n")
 	for group, g := range tags {
 		if len(g) == 0 {
 			continue
 		}
 		t := maps_.ExtractKeys(g)
 		slices.Sort(t)
-		buffer = append(buffer, []byte(PROP_PREFIX_TAGS+group+"="+strings.Join(t, ",")+"\n")...)
+		buffer = append(buffer, []byte(propTagsPrefix+group+"="+strings.Join(t, ",")+"\n")...)
 	}
-	return os.WriteFile(r.repofilepath(objname)+SUFFIX_PROPERTIES, buffer, 0o600)
+	return os.WriteFile(r.repofilepath(objname)+suffixProperties, buffer, 0o600)
 }
 
 type RepoObj struct {
@@ -400,7 +413,7 @@ func (r *Repo) Delete(id string) error {
 	if err := os.Remove(path); err != nil {
 		return errors.Context(err, "Delete repository-object "+id)
 	}
-	if err := os.Remove(path + SUFFIX_PROPERTIES); err != nil {
+	if err := os.Remove(path + suffixProperties); err != nil {
 		log.Warnln("Failed to delete repo-object properties. Next check, orphaned properties-file will again be deleted.")
 	}
 	// TODO not yet deleting any symlinks, etc. These will already be deleted during check anyways.
@@ -418,7 +431,7 @@ func (r *Repo) ObjectPath(objname string) string {
 }
 
 func (r *Repo) Open(objname string) (RepoObj, error) {
-	propspath := r.repofilepath(objname + SUFFIX_PROPERTIES)
+	propspath := r.repofilepath(objname + suffixProperties)
 	props, err := bufio_.OpenFileProcessStringLinesFunc(propspath, '\n', func(s string) ([2]string, error) {
 		// TODO fine-tuning trimming whitespace for comment-line matching
 		if len(s) == 0 || strings_.AnyPrefix(strings.TrimLeft(s, " \t"), "#", "!") {
@@ -436,21 +449,21 @@ func (r *Repo) Open(objname string) (RepoObj, error) {
 	var obj RepoObj
 	// TODO check allowed properties? (permit unknown properties?, as forward-compatibility?)
 	for _, p := range props {
-		if strings.HasPrefix(p[0], PROP_PREFIX_TAGS) {
+		if strings.HasPrefix(p[0], propTagsPrefix) {
 			// Process arbitrary tag-categories later.
 			continue
 		}
 		switch p[0] {
-		case PROP_VERSION:
-			if p[1] != VERSION {
+		case propVersion:
+			if p[1] != version {
 				return RepoObj{}, errors.Context(errors.ErrIllegal, "version of properties is not supported")
 			}
-		case PROP_HASH:
-			if !strings.HasPrefix(p[1], PROP_HASHSPEC_PREFIX) {
+		case propHash:
+			if !strings.HasPrefix(p[1], propHashspecPrefix) {
 				return RepoObj{}, errors.Context(errors.ErrIllegal, "hashspec must contain prefix for hash function")
 			}
-			obj.Id = strings.TrimPrefix(p[1], PROP_HASHSPEC_PREFIX)
-		case PROP_NAME:
+			obj.Id = strings.TrimPrefix(p[1], propHashspecPrefix)
+		case propName:
 			obj.Name = p[1]
 		default:
 			// FIXME handle unknown property (should not panic, incomplete implementation)
@@ -462,10 +475,10 @@ func (r *Repo) Open(objname string) (RepoObj, error) {
 		obj.Tags[cat] = map[string]struct{}{}
 	}
 	for _, p := range props {
-		if !strings.HasPrefix(p[0], PROP_PREFIX_TAGS) {
+		if !strings.HasPrefix(p[0], propTagsPrefix) {
 			continue
 		}
-		cat := strings.TrimPrefix(p[0], PROP_PREFIX_TAGS)
+		cat := strings.TrimPrefix(p[0], propTagsPrefix)
 		if _, ok := obj.Tags[cat]; !ok {
 			// Primarily, preserve existing tag-properties even if not currently in use.
 			obj.Tags[cat] = map[string]struct{}{}
@@ -490,7 +503,7 @@ func (r *Repo) List() ([]RepoObj, error) {
 	}
 	var objects []RepoObj
 	for _, e := range direntries {
-		if strings.HasSuffix(e.Name(), SUFFIX_PROPERTIES) {
+		if strings.HasSuffix(e.Name(), suffixProperties) {
 			continue
 		}
 		if obj, err := r.Open(e.Name()); err == nil {
