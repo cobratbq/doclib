@@ -102,19 +102,19 @@ func constructUI(app fyne.App, parent fyne.Window, location string) *fyne.Contai
 	lblName.TextStyle.Italic = true
 	inputName := widget.NewEntryWithData(viewmodel.name)
 	inputName.Scroll = fyne.ScrollHorizontalOnly
-	btnCheck := widget.NewButtonWithIcon("Check", theme.ViewRefreshIcon(), nil)
-	btnCheck.OnTapped = func() {
+	btnUpdate := widget.NewButtonWithIcon("Update", theme.ViewRefreshIcon(), nil)
+	btnUpdate.OnTapped = func() {
 		// FIXME no error handling
 		if err := docrepo.Check(); err == nil {
 			lblStatus.SetText("Check finished without errors.")
-			btnCheck.Importance = widget.LowImportance
+			btnUpdate.Importance = widget.LowImportance
 		} else {
 			lblStatus.SetText("Check finished with errors: " + err.Error())
-			btnCheck.Importance = widget.WarningImportance
+			btnUpdate.Importance = widget.WarningImportance
 		}
-		btnCheck.Refresh()
+		btnUpdate.Refresh()
 	}
-	btnCheck.Importance = widget.LowImportance
+	btnUpdate.Importance = widget.LowImportance
 	btnOpen := widget.NewButtonWithIcon("", theme.MediaPlayIcon(), func() {
 		cmd := exec.Command("xdg-open", docrepo.ObjectPath(objects[viewmodel.id].Id))
 		if err := cmd.Start(); err != nil {
@@ -138,8 +138,8 @@ func constructUI(app fyne.App, parent fyne.Window, location string) *fyne.Contai
 			lblStatus.SetText("Failed to save updated properties: " + err.Error())
 		}
 		listObjects.RefreshItem(viewmodel.id)
-		btnCheck.Importance = widget.HighImportance
-		btnCheck.Refresh()
+		btnUpdate.Importance = widget.HighImportance
+		btnUpdate.Refresh()
 	})
 	inputName.Validator = func(s string) error {
 		if viewmodel.valid() {
@@ -251,7 +251,7 @@ func constructUI(app fyne.App, parent fyne.Window, location string) *fyne.Contai
 	}))))
 	// TODO long-term, it seems the Tags-tabs don't optimally use vertical space yet.
 	split := container.NewHSplit(
-		container.NewBorder(nil, container.NewHBox(btnImport, btnRemove, layout.NewSpacer(), btnCheck), nil, nil,
+		container.NewBorder(nil, container.NewHBox(btnImport, btnRemove, layout.NewSpacer(), btnUpdate), nil, nil,
 			listObjects),
 		container.NewBorder(
 			container.New(layout.NewFormLayout(),
