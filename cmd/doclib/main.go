@@ -34,6 +34,17 @@ func (i *interopType) valid() bool {
 	return i.id >= 0 && len(builtin.Expect(i.name.Get())) > 0
 }
 
+func createViewmodelTags(docrepo *repo.Repo) map[string]map[string]binding.Bool {
+	tags := map[string]map[string]binding.Bool{}
+	for _, cat := range docrepo.Categories() {
+		tags[cat] = map[string]binding.Bool{}
+		for _, tag := range docrepo.Tags(cat) {
+			tags[cat][tag.Key] = binding.NewBool()
+		}
+	}
+	return tags
+}
+
 func generateTagsContainer(group string, interop *interopType, docrepo *repo.Repo) *fyne.Container {
 	lblTag := widget.NewLabel(strings.ToTitle(group) + ":")
 	lblTag.TextStyle.Italic = true
@@ -45,10 +56,32 @@ func generateTagsContainer(group string, interop *interopType, docrepo *repo.Rep
 	return containerTags
 }
 
+func generateTagsTabs(docrepo *repo.Repo, interop *interopType) []*container.TabItem {
+	categories := map[string]*fyne.Container{}
+	var items []*container.TabItem
+	for _, cat := range docrepo.Categories() {
+		containerCategory := generateTagsContainer(cat, interop, docrepo)
+		categories[cat] = containerCategory
+		items = append(items, container.NewTabItem(strings.ToTitle(cat), container.NewVScroll(containerCategory)))
+	}
+	return items
+}
+
 // TODO consider setting both importance and text for status-label upon changing status text (success, warnings).
 // TODO consider adding button to reload repository information, and rebuild tags/checkboxes lists with updated dirs/sub-dirs/content.
-func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
-	objects := repo.ExtractRepoObjectsSorted(docrepo)
+func constructUI(app fyne.App, parent fyne.Window, location string) *fyne.Container {
+	docrepo, err := repo.OpenRepo(location)
+	assert.Success(err, "Failed to open repository at: "+location)
+	objects := repo.ExtractRepoObjectsSorted(&docrepo)
+	viewmodel := interopType{id: -1, hash: binding.NewString(), name: binding.NewString(), tags: map[string]map[string]binding.Bool{}}
+	viewmodel.tags = createViewmodelTags(&docrepo)
+	// UI components and interaction.
+	lblStatus := widget.NewLabel("")
+	lblStatus.TextStyle.Italic = true
+	lblStatus.Truncation = fyne.TextTruncateEllipsis
+	tabsTags := container.NewAppTabs()
+	tabsTags.Items = generateTagsTabs(&docrepo, &viewmodel)
+	tabsTags.Refresh()
 	// TODO needs smaller font, more suitable theme, or plain (unthemed) widgets.
 	listObjects := widget.NewList(func() int { return len(objects) }, func() fyne.CanvasObject {
 		// note: dictate size with wide initial label text at creation
@@ -56,28 +89,18 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 	}, func(id widget.ListItemID, obj fyne.CanvasObject) {
 		obj.(*widget.Label).SetText(objects[id].Name)
 	})
-	interop := interopType{id: -1, hash: binding.NewString(), name: binding.NewString(), tags: map[string]map[string]binding.Bool{}}
-	for _, cat := range docrepo.Categories() {
-		interop.tags[cat] = map[string]binding.Bool{}
-		for _, tag := range docrepo.Tags(cat) {
-			interop.tags[cat][tag.Key] = binding.NewBool()
-		}
-	}
-	lblStatus := widget.NewLabel("")
-	lblStatus.TextStyle.Italic = true
-	lblStatus.Truncation = fyne.TextTruncateEllipsis
 	lblHash := widget.NewLabel("hash:")
 	lblHash.TextStyle.Italic = true
 	lblHashValue := widget.NewLabel("")
-	lblHashValue.Bind(interop.hash)
+	lblHashValue.Bind(viewmodel.hash)
 	lblHashValue.Truncation = fyne.TextTruncateEllipsis
 	btnCopyHash := widget.NewButtonWithIcon("", theme.ContentCopyIcon(), func() {
-		app.Clipboard().SetContent(objects[interop.id].Id)
+		app.Clipboard().SetContent(objects[viewmodel.id].Id)
 	})
 	btnCopyHash.Importance = widget.LowImportance
 	lblName := widget.NewLabel("name:")
 	lblName.TextStyle.Italic = true
-	inputName := widget.NewEntryWithData(interop.name)
+	inputName := widget.NewEntryWithData(viewmodel.name)
 	inputName.Scroll = fyne.ScrollHorizontalOnly
 	btnCheck := widget.NewButtonWithIcon("Check", theme.ViewRefreshIcon(), nil)
 	btnCheck.OnTapped = func() {
@@ -93,33 +116,33 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 	}
 	btnCheck.Importance = widget.LowImportance
 	btnOpen := widget.NewButtonWithIcon("", theme.MediaPlayIcon(), func() {
-		cmd := exec.Command("xdg-open", docrepo.ObjectPath(objects[interop.id].Id))
+		cmd := exec.Command("xdg-open", docrepo.ObjectPath(objects[viewmodel.id].Id))
 		if err := cmd.Start(); err != nil {
 			log.Warnln("Failed to start/open repository object:", err.Error())
 			return
 		}
 	})
 	btnSave := widget.NewButtonWithIcon("Save", theme.ConfirmIcon(), func() {
-		objects[interop.id].Name = builtin.Expect(interop.name.Get())
-		for cat, tags := range interop.tags {
+		objects[viewmodel.id].Name = builtin.Expect(viewmodel.name.Get())
+		for cat, tags := range viewmodel.tags {
 			for k, v := range tags {
 				if builtin.Expect(v.Get()) {
-					set.Insert(objects[interop.id].Tags[cat], k)
+					set.Insert(objects[viewmodel.id].Tags[cat], k)
 				} else {
-					set.Remove(objects[interop.id].Tags[cat], k)
+					set.Remove(objects[viewmodel.id].Tags[cat], k)
 				}
 			}
 		}
-		if err := docrepo.Save(objects[interop.id]); err != nil {
+		if err := docrepo.Save(objects[viewmodel.id]); err != nil {
 			log.Traceln("Failed to save repo-object:", err.Error())
 			lblStatus.SetText("Failed to save updated properties: " + err.Error())
 		}
-		listObjects.RefreshItem(interop.id)
+		listObjects.RefreshItem(viewmodel.id)
 		btnCheck.Importance = widget.HighImportance
 		btnCheck.Refresh()
 	})
 	inputName.Validator = func(s string) error {
-		if interop.valid() {
+		if viewmodel.valid() {
 			btnOpen.Enable()
 			btnSave.Enable()
 			return nil
@@ -144,7 +167,7 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 			defer io_.CloseLogged(reader, "Failed to gracefully close file.")
 			if newobj, err := docrepo.Acquire(reader, reader.URI().Name()); err == nil {
 				log.Traceln("Import-dialog successfully completed.")
-				objects = repo.ExtractRepoObjectsSorted(docrepo)
+				objects = repo.ExtractRepoObjectsSorted(&docrepo)
 				listObjects.UnselectAll()
 				listObjects.Refresh()
 				if id := repo.IndexObjectByID(objects, newobj.Id); id >= 0 {
@@ -162,21 +185,21 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 		importDialog.Show()
 	})
 	btnRemove := widget.NewButtonWithIcon("", theme.DeleteIcon(), func() {
-		if interop.id < 0 {
+		if viewmodel.id < 0 {
 			return
 		}
-		objname := objects[interop.id].Name
+		objname := objects[viewmodel.id].Name
 		confirmDialog := dialog.NewConfirm("Remove repository object", "Do you want to remove '"+objname+"'?",
 			func(b bool) {
 				if !b {
 					return
 				}
-				if err := docrepo.Delete(objects[interop.id].Id); err != nil {
+				if err := docrepo.Delete(objects[viewmodel.id].Id); err != nil {
 					log.Traceln("Repository object deletion failed:", err.Error())
 					lblStatus.SetText("Failed to delete object: " + err.Error())
 					return
 				}
-				objects = repo.ExtractRepoObjectsSorted(docrepo)
+				objects = repo.ExtractRepoObjectsSorted(&docrepo)
 				listObjects.UnselectAll()
 				listObjects.Refresh()
 				log.Traceln("Repository object deleted.")
@@ -187,19 +210,11 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 		confirmDialog.Show()
 	})
 	btnRemove.Importance = widget.LowImportance
-	tabsTags := container.NewAppTabs()
-	categories := map[string]*fyne.Container{}
-	for _, cat := range docrepo.Categories() {
-		containerCategory := generateTagsContainer(cat, &interop, docrepo)
-		categories[cat] = containerCategory
-		tabsTags.Items = append(tabsTags.Items, container.NewTabItem(strings.ToTitle(cat), container.NewVScroll(containerCategory)))
-	}
-	tabsTags.Refresh()
 	listObjects.OnSelected = func(id widget.ListItemID) {
-		interop.id = id
-		interop.hash.Set(objects[id].Id)
-		interop.name.Set(objects[id].Name)
-		for cat, tags := range interop.tags {
+		viewmodel.id = id
+		viewmodel.hash.Set(objects[id].Id)
+		viewmodel.name.Set(objects[id].Name)
+		for cat, tags := range viewmodel.tags {
 			for k, v := range tags {
 				_, ok := objects[id].Tags[cat][k]
 				v.Set(ok)
@@ -207,29 +222,46 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 		}
 	}
 	listObjects.OnUnselected = func(id widget.ListItemID) {
-		interop.id = -1
-		interop.hash.Set("")
-		interop.name.Set("")
-		for _, tags := range interop.tags {
+		viewmodel.id = -1
+		viewmodel.hash.Set("")
+		viewmodel.name.Set("")
+		for _, tags := range viewmodel.tags {
 			for _, v := range tags {
 				v.Set(false)
 			}
 		}
 	}
+	parent.SetMainMenu(fyne.NewMainMenu(fyne.NewMenu("Repository", fyne.NewMenuItem("Reload", func() {
+		// NOTE: currently does not require closing, yet.
+		if refreshed, err := repo.OpenRepo(location); err == nil {
+			docrepo = refreshed
+			objects = repo.ExtractRepoObjectsSorted(&docrepo)
+			listObjects.UnselectAll()
+			viewmodel.tags = createViewmodelTags(&docrepo)
+			log.Infoln("Repository reloaded.")
+			tabsTags.Items = generateTagsTabs(&docrepo, &viewmodel)
+			lblStatus.Importance = widget.MediumImportance
+			lblStatus.SetText("Repository reloaded.")
+			parent.Content().Refresh()
+		} else {
+			log.WarnOnError(err, "Failed to reload repository")
+			lblStatus.Importance = widget.WarningImportance
+			lblStatus.SetText("Failed to reload repository: " + err.Error())
+		}
+	}))))
 	// TODO long-term, it seems the Tags-tabs don't optimally use vertical space yet.
 	split := container.NewHSplit(
 		container.NewBorder(nil, container.NewHBox(btnImport, btnRemove, layout.NewSpacer(), btnCheck), nil, nil,
 			listObjects),
-		container.NewBorder(nil, lblStatus, nil, nil,
-			container.NewBorder(
-				container.New(layout.NewFormLayout(),
-					lblHash, container.NewBorder(nil, nil, nil, btnCopyHash, lblHashValue),
-					lblName, inputName,
-					layout.NewSpacer(), container.NewBorder(nil, nil, nil, container.NewHBox(btnOpen, btnSave), nil),
-				), nil, nil, nil,
-				tabsTags,
-			),
-		))
+		container.NewBorder(
+			container.New(layout.NewFormLayout(),
+				lblHash, container.NewBorder(nil, nil, nil, btnCopyHash, lblHashValue),
+				lblName, inputName,
+				layout.NewSpacer(), container.NewBorder(nil, nil, nil, container.NewHBox(btnOpen, btnSave), nil),
+			), lblStatus, nil, nil,
+			tabsTags,
+		),
+	)
 	split.SetOffset(0.3)
 	return container.NewStack(split)
 }
@@ -238,16 +270,11 @@ func main() {
 	flagRepo := flag.String("repo", "./data", "Location of the repository.")
 	flag.Parse()
 
-	// TODO needs an App ID
 	app := app.NewWithID("NeedsAnAppID")
-
-	docrepo, err := repo.OpenRepo(*flagRepo)
-	assert.Success(err, "Failed to open repository at: "+*flagRepo)
-
 	mainwnd := app.NewWindow("Doclib")
 	mainwnd.SetPadded(false)
 	mainwnd.Resize(fyne.NewSize(800, 600))
-	mainwnd.SetContent(constructUI(app, mainwnd, &docrepo))
+	mainwnd.SetContent(constructUI(app, mainwnd, *flagRepo))
 	//mainwnd.SetOnClosed(func() {})
 	mainwnd.ShowAndRun()
 }
