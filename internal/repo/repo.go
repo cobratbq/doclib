@@ -25,8 +25,8 @@ import (
 const version = "0"
 const subdirRepo = "repo"
 const subdirTitles = "titles"
-const prefixRepoTemp = "temp--"
-const suffixProperties = ".properties"
+const tempFilePrefix = "temp--"
+const repoPropertiesSuffix = ".properties"
 const propVersion = "version"
 const propHash = "hash"
 const propHashspecPrefix = "blake2b:"
@@ -66,7 +66,7 @@ func (r *Repo) temprepofile() (*os.File, string, error) {
 	var err error
 	var tempf *os.File
 	path := r.repofilepath("")
-	if tempf, err = os.CreateTemp(path, prefixRepoTemp); err != nil {
+	if tempf, err = os.CreateTemp(path, tempFilePrefix); err != nil {
 		return nil, "", errors.Context(err, "create temp file for acquisition")
 	}
 	return tempf, tempf.Name(), nil
@@ -109,6 +109,7 @@ func OpenRepo(location string) (Repo, error) {
 		if !e.IsDir() || isStandardDir(e.Name()) {
 			continue
 		}
+		// FIXME Clean tag-names more (avoid ',' and maybe some other chars), different for tags and categories?
 		index[strings.ToLower(e.Name())] = builtin.Expect(listOptions(filepath.Join(location, e.Name())))
 	}
 	log.Traceln("Category-index:", index)
@@ -257,9 +258,9 @@ func (r *Repo) Check() error {
 			continue
 		}
 		// Check if properties-file has a corresponding repository object.
-		if strings.HasSuffix(e.Name(), suffixProperties) {
+		if strings.HasSuffix(e.Name(), repoPropertiesSuffix) {
 			// properties-files are processed in conjuction with the corresponding binary file.
-			if info, err := os.Stat(r.repofilepath(strings.TrimSuffix(e.Name(), suffixProperties))); err != nil {
+			if info, err := os.Stat(r.repofilepath(strings.TrimSuffix(e.Name(), repoPropertiesSuffix))); err != nil {
 				log.Infoln("Encountered properties-file without corresponding object-binary:", e.Name())
 				if err := os.Remove(r.repofilepath(e.Name())); err != nil {
 					log.Warnln("Failed to remove orphaned properties-file '"+e.Name()+"' from repository:", err.Error())
@@ -272,7 +273,7 @@ func (r *Repo) Check() error {
 			continue
 		}
 		// Remove abandoned temporary repository objects.
-		if strings.HasPrefix(e.Name(), prefixRepoTemp) {
+		if strings.HasPrefix(e.Name(), tempFilePrefix) {
 			if err = os.Remove(r.repofilepath(e.Name())); err != nil {
 				log.Warnln("Failed to remove old temporary file '"+e.Name()+"':", err.Error())
 			} else {
@@ -291,10 +292,10 @@ func (r *Repo) Check() error {
 			log.Warnln(e.Name(), ": is writable, which should not be the case for (immutable) repository-objects.")
 		}
 		// Checking characteristics of file properties.
-		if info, err := os.Stat(r.repofilepath(e.Name() + suffixProperties)); err != nil {
-			log.Warnln(e.Name()+suffixProperties, ": properties-file is missing.")
+		if info, err := os.Stat(r.repofilepath(e.Name() + repoPropertiesSuffix)); err != nil {
+			log.Warnln(e.Name()+repoPropertiesSuffix, ": properties-file is missing.")
 		} else if info.Mode()&os.ModeType != 0 {
-			log.Warnln(e.Name()+suffixProperties, ": properties-file is not a regular file.")
+			log.Warnln(e.Name()+repoPropertiesSuffix, ": properties-file is not a regular file.")
 		} else if o, err := r.Open(e.Name()); err != nil {
 			log.Warnln(e.Name(), ": failed to parse properties: ", err.Error())
 		} else {
@@ -369,7 +370,7 @@ func (r *Repo) writeProperties(objname, name string, tags map[string]map[string]
 		slices.Sort(t)
 		buffer = append(buffer, []byte(propTagsPrefix+group+"="+strings.Join(t, ",")+"\n")...)
 	}
-	return os.WriteFile(r.repofilepath(objname)+suffixProperties, buffer, 0o600)
+	return os.WriteFile(r.repofilepath(objname)+repoPropertiesSuffix, buffer, 0o600)
 }
 
 type RepoObj struct {
@@ -413,7 +414,7 @@ func (r *Repo) Delete(id string) error {
 	if err := os.Remove(path); err != nil {
 		return errors.Context(err, "Delete repository-object "+id)
 	}
-	if err := os.Remove(path + suffixProperties); err != nil {
+	if err := os.Remove(path + repoPropertiesSuffix); err != nil {
 		log.Warnln("Failed to delete repo-object properties. Next check, orphaned properties-file will again be deleted.")
 	}
 	// TODO not yet deleting any symlinks, etc. These will already be deleted during check anyways.
@@ -431,7 +432,7 @@ func (r *Repo) ObjectPath(objname string) string {
 }
 
 func (r *Repo) Open(objname string) (RepoObj, error) {
-	propspath := r.repofilepath(objname + suffixProperties)
+	propspath := r.repofilepath(objname + repoPropertiesSuffix)
 	props, err := bufio_.OpenFileProcessStringLinesFunc(propspath, '\n', func(s string) ([2]string, error) {
 		// TODO fine-tuning trimming whitespace for comment-line matching
 		if len(s) == 0 || strings_.AnyPrefix(strings.TrimLeft(s, " \t"), "#", "!") {
@@ -503,7 +504,7 @@ func (r *Repo) List() ([]RepoObj, error) {
 	}
 	var objects []RepoObj
 	for _, e := range direntries {
-		if strings.HasSuffix(e.Name(), suffixProperties) {
+		if strings.HasSuffix(e.Name(), repoPropertiesSuffix) {
 			continue
 		}
 		if obj, err := r.Open(e.Name()); err == nil {

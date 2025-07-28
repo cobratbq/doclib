@@ -13,6 +13,7 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+	"github.com/cobratbq/doclib/internal/fyneutils"
 	"github.com/cobratbq/doclib/internal/repo"
 	"github.com/cobratbq/goutils/assert"
 	"github.com/cobratbq/goutils/std/builtin"
@@ -29,9 +30,9 @@ type interopType struct {
 	tags map[string]map[string]binding.Bool
 }
 
-// FIXME extend name validation to include illegal file-system symbols or do proper filtering before applying to file-system objects.
 func (i *interopType) valid() bool {
-	return i.id >= 0 && len(builtin.Expect(i.name.Get())) > 0
+	// FIXME extend name validation to include illegal file-system symbols or do proper filtering before applying to file-system objects.
+	return i.id >= 0 && len(builtin.Expect(i.name.Get())) > 0 && !strings.ContainsAny(builtin.Expect(i.name.Get()), string([]byte{0, '/'}))
 }
 
 func createViewmodelTags(docrepo *repo.Repo) map[string]map[string]binding.Bool {
@@ -48,12 +49,12 @@ func createViewmodelTags(docrepo *repo.Repo) map[string]map[string]binding.Bool 
 func generateTagsContainer(group string, interop *interopType, docrepo *repo.Repo) *fyne.Container {
 	lblTag := widget.NewLabel(strings.ToTitle(group) + ":")
 	lblTag.TextStyle.Italic = true
-	containerTags := container.NewVBox()
+	container := container.New(fyneutils.NewHOverflowLayout(6))
 	for _, tag := range docrepo.Tags(group) {
 		chk := widget.NewCheckWithData(tag.Title, interop.tags[group][tag.Key])
-		containerTags.Add(chk)
+		container.Add(chk)
 	}
-	return containerTags
+	return container
 }
 
 func generateTagsTabs(docrepo *repo.Repo, interop *interopType) []*container.TabItem {
@@ -85,7 +86,7 @@ func constructUI(app fyne.App, parent fyne.Window, location string) *fyne.Contai
 	// TODO needs smaller font, more suitable theme, or plain (unthemed) widgets.
 	listObjects := widget.NewList(func() int { return len(objects) }, func() fyne.CanvasObject {
 		// note: dictate size with wide initial label text at creation
-		return widget.NewLabel("XXXXXXXXXXXXXXXXXXXXXXXXXX")
+		return widget.NewLabel("")
 	}, func(id widget.ListItemID, obj fyne.CanvasObject) {
 		obj.(*widget.Label).SetText(objects[id].Name)
 	})
@@ -104,9 +105,8 @@ func constructUI(app fyne.App, parent fyne.Window, location string) *fyne.Contai
 	inputName.Scroll = fyne.ScrollHorizontalOnly
 	btnUpdate := widget.NewButtonWithIcon("Update", theme.ViewRefreshIcon(), nil)
 	btnUpdate.OnTapped = func() {
-		// FIXME no error handling
 		if err := docrepo.Check(); err == nil {
-			lblStatus.SetText("Check finished without errors.")
+			lblStatus.SetText("Check finished.")
 			btnUpdate.Importance = widget.LowImportance
 		} else {
 			lblStatus.SetText("Check finished with errors: " + err.Error())
@@ -231,7 +231,7 @@ func constructUI(app fyne.App, parent fyne.Window, location string) *fyne.Contai
 			}
 		}
 	}
-	parent.SetMainMenu(fyne.NewMainMenu(fyne.NewMenu("Repository", fyne.NewMenuItem("Reload", func() {
+	parent.SetMainMenu(fyne.NewMainMenu(fyne.NewMenu("File", fyne.NewMenuItem("Reload", func() {
 		// NOTE: currently does not require closing, yet.
 		if refreshed, err := repo.OpenRepo(location); err == nil {
 			docrepo = refreshed
@@ -270,11 +270,11 @@ func main() {
 	flagRepo := flag.String("repo", "./data", "Location of the repository.")
 	flag.Parse()
 
+	// TODO needs a proper App-ID
 	app := app.NewWithID("NeedsAnAppID")
 	mainwnd := app.NewWindow("Doclib")
 	mainwnd.SetPadded(false)
 	mainwnd.Resize(fyne.NewSize(800, 600))
 	mainwnd.SetContent(constructUI(app, mainwnd, *flagRepo))
-	//mainwnd.SetOnClosed(func() {})
 	mainwnd.ShowAndRun()
 }
