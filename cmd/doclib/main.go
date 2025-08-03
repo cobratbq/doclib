@@ -49,10 +49,10 @@ func createViewmodelTags(docrepo *repo.Repo) map[string]map[string]binding.Bool 
 func generateTagsContainer(group string, interop *interopType, docrepo *repo.Repo) *fyne.Container {
 	lblTag := widget.NewLabel(strings.ToTitle(group) + ":")
 	lblTag.TextStyle.Italic = true
-	container := container.New(fyneutils.NewHOverflowLayout(6))
+	container := container.New(fyneutils.NewSignificantOnTop(fyneutils.IsCheckChecked))
 	for _, tag := range docrepo.Tags(group) {
 		chk := widget.NewCheckWithData(tag.Title, interop.tags[group][tag.Key])
-		container.Add(chk)
+		container.Objects = append(container.Objects, chk)
 	}
 	return container
 }
@@ -220,6 +220,7 @@ func constructUI(app fyne.App, parent fyne.Window, location string) *fyne.Contai
 				v.Set(ok)
 			}
 		}
+		fyne.Do(tabsTags.Refresh)
 	}
 	listObjects.OnUnselected = func(id widget.ListItemID) {
 		viewmodel.id = -1
