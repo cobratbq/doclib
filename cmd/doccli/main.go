@@ -25,7 +25,7 @@ func parseFlags() config {
 func cmdCheck(cfg *config) {
 	repo, err := repo.OpenRepository(cfg.location)
 	assert.Success(err, "Failed to open repository at location: "+cfg.location)
-	log.Infoln("Finished:", repo.Check())
+	log.Infoln("Result:", repo.Check())
 }
 
 // TODO eventually, may need to add lock if both UI and cli are used at same time, especially when performing checks/fixes.

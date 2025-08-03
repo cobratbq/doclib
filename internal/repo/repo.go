@@ -257,7 +257,7 @@ func (r *Repo) Check() error {
 	var entries []os.DirEntry
 	var err error
 
-	log.Infoln("Starting repository check…")
+	log.Infoln("Checking repository…")
 	defer log.Infoln("Finished repository check.")
 
 	if entries, err = os.ReadDir(r.repofilepath("")); err != nil {
