@@ -22,12 +22,6 @@ func parseFlags() config {
 	return cfg
 }
 
-func cmdInit(cfg *config) {
-	err := repo.CreateRepo(cfg.location)
-	assert.Success(err, "Create new document repository:")
-	log.Infoln("Repository created.")
-}
-
 func cmdCheck(cfg *config) {
 	repo, err := repo.OpenRepository(cfg.location)
 	assert.Success(err, "Failed to open repository at location: "+cfg.location)
@@ -48,8 +42,6 @@ func main() {
 	switch cfg.args[0] {
 	case "check":
 		cmdCheck(&cfg)
-	case "init":
-		cmdInit(&cfg)
 	default:
 		flag.PrintDefaults()
 	}

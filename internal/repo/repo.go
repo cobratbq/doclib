@@ -85,19 +85,6 @@ func listOptions(location string) ([]Tag, error) {
 	}
 }
 
-func CreateRepo(location string) error {
-	if err := os.MkdirAll(location, 0o700); err != nil {
-		return errors.Context(err, "repository root directory")
-	}
-	if err := os.Mkdir(filepath.Join(location, subdirRepo), 0o700); err != nil {
-		return errors.Context(err, "repository '"+subdirRepo+"' subdirectory")
-	}
-	if err := os.Mkdir(filepath.Join(location, subdirTitles), 0o700); err != nil {
-		return errors.Context(err, "repository '"+subdirTitles+"' subdirectory")
-	}
-	return nil
-}
-
 func readTagEntries(location string) (map[string][]Tag, error) {
 	index := map[string][]Tag{}
 	entries, err := os.ReadDir(location)
