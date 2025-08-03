@@ -134,6 +134,7 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 		if err := docrepo.Save(objects[viewmodel.id]); err != nil {
 			log.Traceln("Failed to save repo-object:", err.Error())
 			lblStatus.SetText("Failed to save updated properties: " + err.Error())
+			return
 		}
 		listObjects.RefreshItem(viewmodel.id)
 		btnUpdate.Importance = widget.HighImportance
@@ -235,6 +236,7 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 			log.WarnOnError(err, "Failed to reload repository")
 			lblStatus.Importance = widget.WarningImportance
 			lblStatus.SetText("Failed to reload repository: " + err.Error())
+			return
 		}
 		listObjects.UnselectAll()
 		objects = repo.ExtractRepoObjectsSorted(docrepo)
