@@ -272,8 +272,7 @@ func main() {
 	docrepo, err := repo.OpenRepository(*flagRepo)
 	assert.Success(err, "Failed to open repository at: "+*flagRepo)
 
-	// TODO needs a proper App-ID
-	app := app.NewWithID("NeedsAnAppID")
+	app := app.New()
 	mainwnd := app.NewWindow("Doclib")
 	mainwnd.SetPadded(false)
 	mainwnd.Resize(fyne.NewSize(800, 600))
