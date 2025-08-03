@@ -114,8 +114,18 @@ func readTagEntries(location string) (map[string][]Tag, error) {
 	return index, nil
 }
 
-// FIXME does not check/create subdirs 'repo' and 'titles'
 func OpenRepository(location string) (Repo, error) {
+	if !os_.ExistsIsDirectory(location) {
+		return Repo{}, errors.ErrIllegal
+	}
+	if subdir := filepath.Join(location, subdirRepo); !os_.ExistsIsDirectory(subdir) {
+		log.Infoln("Empty repository. Creating directory 'repo'…")
+		os.Mkdir(subdir, 0o700)
+	}
+	if subdir := filepath.Join(location, subdirTitles); !os_.ExistsIsDirectory(subdir) {
+		log.Infoln("Empty repository. Creating directory 'titles'…")
+		os.Mkdir(subdir, 0o700)
+	}
 	index, err := readTagEntries(location)
 	if err != nil {
 		return Repo{}, errors.Context(err, "reading tags from repository")
