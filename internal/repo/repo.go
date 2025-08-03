@@ -98,12 +98,11 @@ func CreateRepo(location string) error {
 	return nil
 }
 
-// FIXME does not check/create subdirs 'repo' and 'titles'
-func OpenRepo(location string) (Repo, error) {
+func readTagEntries(location string) (map[string][]Tag, error) {
 	index := map[string][]Tag{}
 	entries, err := os.ReadDir(location)
 	if err != nil {
-		return Repo{}, errors.Context(err, "open repository root-directory")
+		return index, errors.Context(err, "open repository root-directory")
 	}
 	for _, e := range entries {
 		if !e.IsDir() || isStandardDir(e.Name()) {
@@ -112,8 +111,25 @@ func OpenRepo(location string) (Repo, error) {
 		// FIXME Clean tag-names more (avoid ',' and maybe some other chars), different for tags and categories?
 		index[strings.ToLower(e.Name())] = builtin.Expect(listOptions(filepath.Join(location, e.Name())))
 	}
+	return index, nil
+}
+
+// FIXME does not check/create subdirs 'repo' and 'titles'
+func OpenRepo(location string) (Repo, error) {
+	index, err := readTagEntries(location)
+	if err != nil {
+		return Repo{}, errors.Context(err, "reading tags from repository")
+	}
 	log.Traceln("Category-index:", index)
 	return Repo{location: location, cats: index}, nil
+}
+
+func (r *Repo) Refresh() error {
+	index, err := readTagEntries(r.location)
+	if err == nil {
+		r.cats = index
+	}
+	return err
 }
 
 func (r *Repo) Categories() []string {

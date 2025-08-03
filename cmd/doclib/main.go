@@ -70,18 +70,16 @@ func generateTagsTabs(docrepo *repo.Repo, interop *interopType) []*container.Tab
 
 // TODO consider setting both importance and text for status-label upon changing status text (success, warnings).
 // TODO consider adding button to reload repository information, and rebuild tags/checkboxes lists with updated dirs/sub-dirs/content.
-func constructUI(app fyne.App, parent fyne.Window, location string) *fyne.Container {
-	docrepo, err := repo.OpenRepo(location)
-	assert.Success(err, "Failed to open repository at: "+location)
-	objects := repo.ExtractRepoObjectsSorted(&docrepo)
+func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
+	objects := repo.ExtractRepoObjectsSorted(docrepo)
 	viewmodel := interopType{id: -1, hash: binding.NewString(), name: binding.NewString(), tags: map[string]map[string]binding.Bool{}}
-	viewmodel.tags = createViewmodelTags(&docrepo)
+	viewmodel.tags = createViewmodelTags(docrepo)
 	// UI components and interaction.
 	lblStatus := widget.NewLabel("")
 	lblStatus.TextStyle.Italic = true
 	lblStatus.Truncation = fyne.TextTruncateEllipsis
 	tabsTags := container.NewAppTabs()
-	tabsTags.Items = generateTagsTabs(&docrepo, &viewmodel)
+	tabsTags.Items = generateTagsTabs(docrepo, &viewmodel)
 	tabsTags.Refresh()
 	// TODO needs smaller font, more suitable theme, or plain (unthemed) widgets.
 	listObjects := widget.NewList(func() int { return len(objects) }, func() fyne.CanvasObject {
@@ -167,7 +165,7 @@ func constructUI(app fyne.App, parent fyne.Window, location string) *fyne.Contai
 			defer io_.CloseLogged(reader, "Failed to gracefully close file.")
 			if newobj, err := docrepo.Acquire(reader, reader.URI().Name()); err == nil {
 				log.Traceln("Import-dialog successfully completed.")
-				objects = repo.ExtractRepoObjectsSorted(&docrepo)
+				objects = repo.ExtractRepoObjectsSorted(docrepo)
 				listObjects.UnselectAll()
 				listObjects.Refresh()
 				if id := repo.IndexObjectByID(objects, newobj.Id); id >= 0 {
@@ -199,7 +197,7 @@ func constructUI(app fyne.App, parent fyne.Window, location string) *fyne.Contai
 					lblStatus.SetText("Failed to delete object: " + err.Error())
 					return
 				}
-				objects = repo.ExtractRepoObjectsSorted(&docrepo)
+				objects = repo.ExtractRepoObjectsSorted(docrepo)
 				listObjects.UnselectAll()
 				listObjects.Refresh()
 				log.Traceln("Repository object deleted.")
@@ -233,22 +231,19 @@ func constructUI(app fyne.App, parent fyne.Window, location string) *fyne.Contai
 		}
 	}
 	parent.SetMainMenu(fyne.NewMainMenu(fyne.NewMenu("File", fyne.NewMenuItem("Reload", func() {
-		// NOTE: currently does not require closing, yet.
-		if refreshed, err := repo.OpenRepo(location); err == nil {
-			docrepo = refreshed
-			objects = repo.ExtractRepoObjectsSorted(&docrepo)
-			listObjects.UnselectAll()
-			viewmodel.tags = createViewmodelTags(&docrepo)
-			log.Infoln("Repository reloaded.")
-			tabsTags.Items = generateTagsTabs(&docrepo, &viewmodel)
-			lblStatus.Importance = widget.MediumImportance
-			lblStatus.SetText("Repository reloaded.")
-			parent.Content().Refresh()
-		} else {
+		if err := docrepo.Refresh(); err != nil {
 			log.WarnOnError(err, "Failed to reload repository")
 			lblStatus.Importance = widget.WarningImportance
 			lblStatus.SetText("Failed to reload repository: " + err.Error())
 		}
+		listObjects.UnselectAll()
+		objects = repo.ExtractRepoObjectsSorted(docrepo)
+		viewmodel.tags = createViewmodelTags(docrepo)
+		log.Infoln("Repository reloaded.")
+		tabsTags.Items = generateTagsTabs(docrepo, &viewmodel)
+		lblStatus.Importance = widget.MediumImportance
+		lblStatus.SetText("Repository reloaded.")
+		parent.Content().Refresh()
 	}))))
 	// TODO long-term, it seems the Tags-tabs don't optimally use vertical space yet.
 	split := container.NewHSplit(
@@ -271,11 +266,14 @@ func main() {
 	flagRepo := flag.String("repo", "./data", "Location of the repository.")
 	flag.Parse()
 
+	docrepo, err := repo.OpenRepo(*flagRepo)
+	assert.Success(err, "Failed to open repository at: "+*flagRepo)
+
 	// TODO needs a proper App-ID
 	app := app.NewWithID("NeedsAnAppID")
 	mainwnd := app.NewWindow("Doclib")
 	mainwnd.SetPadded(false)
 	mainwnd.Resize(fyne.NewSize(800, 600))
-	mainwnd.SetContent(constructUI(app, mainwnd, *flagRepo))
+	mainwnd.SetContent(constructUI(app, mainwnd, &docrepo))
 	mainwnd.ShowAndRun()
 }
