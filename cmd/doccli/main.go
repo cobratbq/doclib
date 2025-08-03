@@ -29,7 +29,7 @@ func cmdInit(cfg *config) {
 }
 
 func cmdCheck(cfg *config) {
-	repo, err := repo.OpenRepo(cfg.location)
+	repo, err := repo.OpenRepository(cfg.location)
 	assert.Success(err, "Failed to open repository at location: "+cfg.location)
 	log.Infoln("Finished:", repo.Check())
 }

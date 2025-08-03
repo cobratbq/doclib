@@ -269,7 +269,7 @@ func main() {
 	flagRepo := flag.String("repo", "./data", "Location of the repository.")
 	flag.Parse()
 
-	docrepo, err := repo.OpenRepo(*flagRepo)
+	docrepo, err := repo.OpenRepository(*flagRepo)
 	assert.Success(err, "Failed to open repository at: "+*flagRepo)
 
 	// TODO needs a proper App-ID

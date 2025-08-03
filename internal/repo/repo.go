@@ -115,7 +115,7 @@ func readTagEntries(location string) (map[string][]Tag, error) {
 }
 
 // FIXME does not check/create subdirs 'repo' and 'titles'
-func OpenRepo(location string) (Repo, error) {
+func OpenRepository(location string) (Repo, error) {
 	index, err := readTagEntries(location)
 	if err != nil {
 		return Repo{}, errors.Context(err, "reading tags from repository")
@@ -228,7 +228,7 @@ func (r *Repo) checkBadTags() error {
 						continue
 					}
 					var repoobj RepoObj
-					if repoobj, err = r.Open(filepath.Base(repoobjpath)); err != nil {
+					if repoobj, err = r.OpenObject(filepath.Base(repoobjpath)); err != nil {
 						log.Warnln("Failed to open repo-object:", err.Error())
 						continue
 					}
@@ -312,7 +312,7 @@ func (r *Repo) Check() error {
 			log.Warnln(e.Name()+repoPropertiesSuffix, ": properties-file is missing.")
 		} else if info.Mode()&os.ModeType != 0 {
 			log.Warnln(e.Name()+repoPropertiesSuffix, ": properties-file is not a regular file.")
-		} else if o, err := r.Open(e.Name()); err != nil {
+		} else if o, err := r.OpenObject(e.Name()); err != nil {
 			log.Warnln(e.Name(), ": failed to parse properties: ", err.Error())
 		} else {
 			if o.Id != e.Name() {
@@ -347,7 +347,7 @@ func (r *Repo) Check() error {
 		path := filepath.Join(r.location, subdirTitles, e.Name())
 		if targetpath, err := os.Readlink(path); err != nil {
 			log.Warnln(e.Name(), ": failed to query symlink without error:", err.Error())
-		} else if obj, err := r.Open(filepath.Base(targetpath)); err != nil {
+		} else if obj, err := r.OpenObject(filepath.Base(targetpath)); err != nil {
 			// TODO should I be checking that linkpath has characteristics of repo-object before drawing conclusions?
 			log.Traceln("titles symlink does not correctly link to repo-object. Deleting…")
 			if err := os.Remove(path); err != nil {
@@ -422,7 +422,7 @@ func (r *Repo) Acquire(reader io.Reader, name string) (RepoObj, error) {
 	}
 	// TODO get RepoObj instance from writeProperties, instead of going through Open?
 	log.Traceln("Completed acquisition. (object: " + checksumhex + ")")
-	return r.Open(checksumhex)
+	return r.OpenObject(checksumhex)
 }
 
 func (r *Repo) Delete(id string) error {
@@ -447,7 +447,7 @@ func (r *Repo) ObjectPath(objname string) string {
 	return r.repofilepath(objname)
 }
 
-func (r *Repo) Open(objname string) (RepoObj, error) {
+func (r *Repo) OpenObject(objname string) (RepoObj, error) {
 	propspath := r.repofilepath(objname + repoPropertiesSuffix)
 	props, err := bufio_.OpenFileProcessStringLinesFunc(propspath, '\n', func(s string) ([2]string, error) {
 		// TODO fine-tuning trimming whitespace for comment-line matching
@@ -523,7 +523,7 @@ func (r *Repo) List() ([]RepoObj, error) {
 		if strings.HasSuffix(e.Name(), repoPropertiesSuffix) {
 			continue
 		}
-		if obj, err := r.Open(e.Name()); err == nil {
+		if obj, err := r.OpenObject(e.Name()); err == nil {
 			objects = append(objects, obj)
 		} else {
 			log.Infoln("Skipping", e.Name(), ": failed to open repo-object:", err.Error())
