@@ -253,6 +253,7 @@ func (r *Repo) checkBadTags() error {
 }
 
 // TODO add param and distinguish between reporting-only and fixing issues.
+// FIXME see if we can reliably determine that repo-directory truly is a repository before making changes.
 func (r *Repo) Check() error {
 	var entries []os.DirEntry
 	var err error
