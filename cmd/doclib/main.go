@@ -230,6 +230,7 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 				v.Set(false)
 			}
 		}
+		fyne.Do(tabsTags.Refresh)
 	}
 	parent.SetMainMenu(fyne.NewMainMenu(fyne.NewMenu("File", fyne.NewMenuItem("Reload", func() {
 		if err := docrepo.Refresh(); err != nil {
