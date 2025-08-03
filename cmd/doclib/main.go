@@ -210,24 +210,24 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 	})
 	btnRemove.Importance = widget.LowImportance
 	listObjects.OnSelected = func(id widget.ListItemID) {
-		viewmodel.id = id
-		viewmodel.hash.Set(objects[id].Id)
-		viewmodel.name.Set(objects[id].Name)
-		for cat, tags := range viewmodel.tags {
-			for k, v := range tags {
-				_, ok := objects[id].Tags[cat][k]
-				v.Set(ok)
+		if id < 0 {
+			viewmodel.id = -1
+			viewmodel.hash.Set("")
+			viewmodel.name.Set("")
+			for _, tags := range viewmodel.tags {
+				for _, v := range tags {
+					v.Set(false)
+				}
 			}
-		}
-		fyne.Do(tabsTags.Refresh)
-	}
-	listObjects.OnUnselected = func(id widget.ListItemID) {
-		viewmodel.id = -1
-		viewmodel.hash.Set("")
-		viewmodel.name.Set("")
-		for _, tags := range viewmodel.tags {
-			for _, v := range tags {
-				v.Set(false)
+		} else {
+			viewmodel.id = id
+			viewmodel.hash.Set(objects[id].Id)
+			viewmodel.name.Set(objects[id].Name)
+			for cat, tags := range viewmodel.tags {
+				for k, v := range tags {
+					_, ok := objects[id].Tags[cat][k]
+					v.Set(ok)
+				}
 			}
 		}
 		fyne.Do(tabsTags.Refresh)
