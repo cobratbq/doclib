@@ -24,6 +24,4 @@ _This application is still in development. Although "checking" is highly specifi
 - Checksums are calculated using [BLAKE2b](<https://www.blake2.net/> "BLAKE2 -- fast secure hashing")
 - Build without `tracelog` build-tag, to disable `[trace]` log entries for reduced verbosity.
 
-
-
 __note__ The _Check_-process produces output on the commandline to report on issues.
