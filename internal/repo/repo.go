@@ -135,6 +135,10 @@ func (r *Repo) Categories() []string {
 	return keys
 }
 
+func (r *Repo) Location() string {
+	return r.location
+}
+
 // Tags returns list of Tags (lower-cased identifier and a title, unchanged from the file system representation).
 func (r *Repo) Tags(category string) []Tag {
 	if index, ok := r.cats[category]; !ok {

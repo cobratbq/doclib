@@ -104,6 +104,15 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 	lblName.TextStyle.Italic = true
 	inputName := widget.NewEntryWithData(viewmodel.name)
 	inputName.Scroll = fyne.ScrollHorizontalOnly
+	btnOpenRepoLocation := widget.NewButtonWithIcon("", theme.FolderOpenIcon(), func() {
+		cmd := exec.Command("xdg-open", docrepo.Location())
+		if err := cmd.Start(); err != nil {
+			log.Warnln("Failed to open repository location:", err.Error())
+			setStatus("Failed to open repository location: "+err.Error(), widget.WarningImportance)
+			return
+		}
+	})
+	btnOpenRepoLocation.Importance = widget.LowImportance
 	btnUpdate := widget.NewButtonWithIcon("Update", theme.ViewRefreshIcon(), nil)
 	btnUpdate.OnTapped = func() {
 		if err := docrepo.Check(); err == nil {
@@ -260,7 +269,7 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 	}))))
 	// TODO long-term, it seems the Tags-tabs don't optimally use vertical space yet.
 	split := container.NewHSplit(
-		container.NewBorder(nil, container.NewHBox(btnImport, btnRemove, layout.NewSpacer(), btnUpdate), nil, nil,
+		container.NewBorder(nil, container.NewHBox(btnImport, btnRemove, layout.NewSpacer(), btnOpenRepoLocation, btnUpdate), nil, nil,
 			listObjects),
 		container.NewBorder(
 			container.New(layout.NewFormLayout(),
