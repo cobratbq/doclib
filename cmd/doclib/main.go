@@ -83,6 +83,9 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 	}
 	tabsTags := container.NewAppTabs()
 	tabsTags.Items = generateTagsTabs(docrepo, &viewmodel)
+	tabsTags.OnSelected = func(ti *container.TabItem) {
+		ti.Content.(*container.Scroll).Offset = fyne.Position{X: 0, Y: 0}
+	}
 	tabsTags.Refresh()
 	// TODO needs smaller font, more suitable theme, or plain (unthemed) widgets.
 	listObjects := widget.NewList(func() int { return len(objects) }, func() fyne.CanvasObject {
