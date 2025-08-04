@@ -2,24 +2,9 @@ package fyneutils
 
 import (
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/widget"
 	"github.com/cobratbq/goutils/std/builtin/slices"
 	"github.com/cobratbq/goutils/std/log"
 )
-
-func IsCheckChecked(obj fyne.CanvasObject) bool {
-	return obj.(*widget.Check).Checked
-}
-
-// RefreshTab refreshes the selected tab if one is selected.
-// note: check `container.AppTabs.Refresh()` first if it is sufficient.
-func RefreshTab(tabs *container.AppTabs) {
-	if tabs.SelectedIndex() < 0 {
-		return
-	}
-	tabs.Selected().Content.Refresh()
-}
 
 func maxMinSize(objects []fyne.CanvasObject) fyne.Size {
 	return slices.Fold(objects, fyne.NewSize(0, 0), func(v fyne.Size, obj fyne.CanvasObject) fyne.Size {
