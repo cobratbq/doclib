@@ -103,6 +103,7 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 		app.Clipboard().SetContent(objects[viewmodel.id].Id)
 	})
 	btnCopyHash.Importance = widget.LowImportance
+	btnCopyHash.Disable()
 	lblName := widget.NewLabel("name:")
 	lblName.TextStyle.Italic = true
 	inputName := widget.NewEntryWithData(viewmodel.name)
@@ -229,6 +230,7 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 		if id < 0 {
 			viewmodel.id = -1
 			viewmodel.hash.Set("")
+			btnCopyHash.Disable()
 			viewmodel.name.Set("")
 			for _, tags := range viewmodel.tags {
 				for _, v := range tags {
@@ -239,6 +241,7 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 		} else {
 			viewmodel.id = id
 			viewmodel.hash.Set(objects[id].Id)
+			btnCopyHash.Enable()
 			viewmodel.name.Set(objects[id].Name)
 			for cat, tags := range viewmodel.tags {
 				for k, v := range tags {
@@ -253,6 +256,7 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 	listObjects.OnUnselected = func(id widget.ListItemID) {
 		viewmodel.id = -1
 		viewmodel.hash.Set("")
+		btnCopyHash.Disable()
 		viewmodel.name.Set("")
 		btnRemove.Disable()
 	}
