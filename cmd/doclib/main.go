@@ -251,6 +251,9 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 			}
 			btnRemove.Enable()
 		}
+		if tabsTags.SelectedIndex() >= 0 {
+			tabsTags.Selected().Content.(*container.Scroll).ScrollToOffset(fyne.Position{X: 0, Y: 0})
+		}
 		fyne.Do(tabsTags.Refresh)
 	}
 	listObjects.OnUnselected = func(id widget.ListItemID) {
