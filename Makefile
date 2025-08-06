@@ -1,13 +1,15 @@
 SUFFIXES :=
 MAKEFLAGS += --no-builtin-rules --no-builtin-variables
 
-BUILDARGS := -v -buildmode=pie -tags gles,tracelog
-
-.PHONY: clean build run
+.PHONY: clean build release run
 
 build:
-	go build $(BUILDARGS) ./cmd/doclib
-	go build $(BUILDARGS) ./cmd/doccli
+	go build -v -buildmode=pie -tags gles,tracelog ./cmd/doclib
+	go build -v -buildmode=pie -tags gles,tracelog ./cmd/doccli
+
+release:
+	go build -v -buildmode=pie -tags gles ./cmd/doclib
+	go build -v -buildmode=pie -tags gles ./cmd/doccli
 
 run:
 	go run $(BUILDARGS) ./cmd/doclib/main.go
