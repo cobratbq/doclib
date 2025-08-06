@@ -12,11 +12,6 @@ func IsCheckChecked(obj fyne.CanvasObject) bool {
 	return obj.(*widget.Check).Checked
 }
 
-func SetStatusLabel(label *widget.Label, text string, importance widget.Importance) {
-	label.Importance = importance
-	label.SetText(text)
-}
-
 // RefreshTab refreshes the selected tab if one is selected.
 // note: check `container.AppTabs.Refresh()` first if it is sufficient.
 func RefreshTab(tabs *container.AppTabs) {

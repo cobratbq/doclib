@@ -78,8 +78,9 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 	lblStatus := widget.NewLabel("")
 	lblStatus.TextStyle.Italic = true
 	lblStatus.Truncation = fyne.TextTruncateEllipsis
-	setStatus := func(text string, importance widget.Importance) {
-		fyneutils.SetStatusLabel(lblStatus, text, importance)
+	updateStatus := func(text string, importance widget.Importance) {
+		lblStatus.Importance = importance
+		lblStatus.SetText(text)
 	}
 	tabsTags := container.NewAppTabs()
 	tabsTags.Items = generateTagsTabs(docrepo, &viewmodel)
@@ -112,7 +113,7 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 		cmd := exec.Command("xdg-open", docrepo.Location())
 		if err := cmd.Start(); err != nil {
 			log.Warnln("Failed to open repository location:", err.Error())
-			setStatus("Failed to open repository location: "+err.Error(), widget.WarningImportance)
+			updateStatus("Failed to open repository location: "+err.Error(), widget.WarningImportance)
 			return
 		}
 	})
@@ -120,10 +121,10 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 	btnUpdate := widget.NewButtonWithIcon("Update", theme.ViewRefreshIcon(), nil)
 	btnUpdate.OnTapped = func() {
 		if err := docrepo.Check(); err == nil {
-			setStatus("Check finished.", widget.MediumImportance)
+			updateStatus("Check finished.", widget.MediumImportance)
 			btnUpdate.Importance = widget.LowImportance
 		} else {
-			setStatus("Check finished with errors:"+err.Error(), widget.MediumImportance)
+			updateStatus("Check finished with errors:"+err.Error(), widget.MediumImportance)
 			btnUpdate.Importance = widget.WarningImportance
 		}
 		btnUpdate.Refresh()
@@ -149,7 +150,7 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 		}
 		if err := docrepo.Save(objects[viewmodel.id]); err != nil {
 			log.Traceln("Failed to save repo-object:", err.Error())
-			setStatus("Failed to save updated properties: "+err.Error(), widget.WarningImportance)
+			updateStatus("Failed to save updated properties: "+err.Error(), widget.WarningImportance)
 			return
 		}
 		listObjects.RefreshItem(viewmodel.id)
@@ -171,12 +172,12 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 		importDialog := dialog.NewFileOpen(func(reader fyne.URIReadCloser, err error) {
 			if err != nil {
 				log.Warnln("Error opening file-dialog: ", err.Error())
-				setStatus("File-dialog failed.", widget.WarningImportance)
+				updateStatus("File-dialog failed.", widget.WarningImportance)
 				return
 			}
 			if reader == nil {
 				log.Traceln("Document import was cancelled by user.")
-				setStatus("", widget.WarningImportance)
+				updateStatus("", widget.WarningImportance)
 				return
 			}
 			defer io_.CloseLogged(reader, "Failed to gracefully close file.")
@@ -191,7 +192,7 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 				log.Traceln("Document import completed.")
 			} else {
 				log.Traceln("Failed to copy document into repository:", err.Error())
-				setStatus("Failed to import document into repository: "+err.Error(), widget.WarningImportance)
+				updateStatus("Failed to import document into repository: "+err.Error(), widget.WarningImportance)
 			}
 		}, parent)
 		importDialog.SetConfirmText("Import")
@@ -211,14 +212,14 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 				}
 				if err := docrepo.Delete(objects[viewmodel.id].Id); err != nil {
 					log.Traceln("Repository object deletion failed:", err.Error())
-					setStatus("Failed to delete object: "+err.Error(), widget.WarningImportance)
+					updateStatus("Failed to delete object: "+err.Error(), widget.WarningImportance)
 					return
 				}
 				objects = repo.ExtractRepoObjectsSorted(docrepo)
 				listObjects.UnselectAll()
 				listObjects.Refresh()
 				log.Traceln("Repository object deleted.")
-				setStatus("Repository object deleted.", widget.MediumImportance)
+				updateStatus("Repository object deleted.", widget.MediumImportance)
 			}, parent)
 		confirmDialog.SetConfirmText("Delete")
 		confirmDialog.SetDismissText("Cancel")
@@ -266,7 +267,7 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 	parent.SetMainMenu(fyne.NewMainMenu(fyne.NewMenu("File", fyne.NewMenuItem("Reload", func() {
 		if err := docrepo.Refresh(); err != nil {
 			log.WarnOnError(err, "Failed to reload repository")
-			setStatus("Failed to reload repository: "+err.Error(), widget.WarningImportance)
+			updateStatus("Failed to reload repository: "+err.Error(), widget.WarningImportance)
 			return
 		}
 		listObjects.UnselectAll()
@@ -274,7 +275,7 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 		viewmodel.tags = createViewmodelTags(docrepo)
 		log.Infoln("Repository reloaded.")
 		tabsTags.Items = generateTagsTabs(docrepo, &viewmodel)
-		setStatus("Repository reloaded.", widget.MediumImportance)
+		updateStatus("Repository reloaded.", widget.MediumImportance)
 		parent.Content().Refresh()
 	}))))
 	// TODO long-term, it seems the Tags-tabs don't optimally use vertical space yet.
