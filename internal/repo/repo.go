@@ -92,7 +92,7 @@ func readTagEntries(location string) (map[string][]Tag, error) {
 		return index, errors.Context(err, "open repository root-directory")
 	}
 	for _, e := range entries {
-		if !e.IsDir() || isStandardDir(e.Name()) {
+		if !e.IsDir() || isStandardDir(e.Name()) || strings.HasPrefix(e.Name(), ".") {
 			continue
 		}
 		// FIXME Clean tag-names more (avoid ',' and maybe some other chars), different for tags and categories?
