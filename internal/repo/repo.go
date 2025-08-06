@@ -155,7 +155,7 @@ func (r *Repo) checkTagsForObject(id, name string, tagCats map[string]map[string
 		return errors.Context(err, "failed to open root repository directory for tags processing")
 	}
 	for _, e := range entries {
-		if !e.IsDir() || isStandardDir(e.Name()) {
+		if !e.IsDir() || isStandardDir(e.Name()) || strings.HasPrefix(e.Name(), ".") {
 			continue
 		}
 		// TODO we don't currently check if tag-names are used for which there exists no directory
@@ -200,7 +200,7 @@ func (r *Repo) checkBadTags() error {
 		return errors.Context(err, "failed to open repository root-directory for tags processing")
 	}
 	for _, e := range entries {
-		if !e.IsDir() || isStandardDir(e.Name()) {
+		if !e.IsDir() || isStandardDir(e.Name()) || strings.HasPrefix(e.Name(), ".") {
 			continue
 		}
 		log.Traceln("Processing tag-category '" + e.Name() + "'…")
@@ -271,8 +271,8 @@ func (r *Repo) Check() error {
 	for _, e := range entries {
 		log.Traceln("Processing repo-entry…", e.Name())
 		// Any non-regular file-system object is a foreign entity.
-		if !e.Type().IsRegular() {
-			log.Infoln(e.Name(), ": not a regular file.")
+		if !e.Type().IsRegular() || strings.HasPrefix(e.Name(), ".") {
+			log.Infoln(e.Name(), ": is a foreign object.")
 			continue
 		}
 		// Check if properties-file has a corresponding repository object.
