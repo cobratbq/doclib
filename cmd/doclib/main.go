@@ -24,7 +24,7 @@ import (
 )
 
 type interopType struct {
-	id   int
+	id   binding.Int
 	hash binding.String
 	name binding.String
 	tags map[string]map[string]binding.Bool
@@ -32,7 +32,9 @@ type interopType struct {
 
 func (i *interopType) valid() bool {
 	// FIXME extend name validation to include illegal file-system symbols or do proper filtering before applying to file-system objects.
-	return i.id >= 0 && len(builtin.Expect(i.name.Get())) > 0 && !strings.ContainsAny(builtin.Expect(i.name.Get()), string([]byte{0, '/'}))
+	return builtin.Expect(i.id.Get()) >= 0 &&
+		len(builtin.Expect(i.name.Get())) > 0 &&
+		!strings.ContainsAny(builtin.Expect(i.name.Get()), string([]byte{0, '/'}))
 }
 
 func createViewmodelTags(docrepo *repo.Repo) map[string]map[string]binding.Bool {
@@ -72,8 +74,13 @@ func generateTagsTabs(docrepo *repo.Repo, interop *interopType) []*container.Tab
 // TODO consider adding button to reload repository information, and rebuild tags/checkboxes lists with updated dirs/sub-dirs/content.
 func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 	objects := repo.ExtractRepoObjectsSorted(docrepo)
-	viewmodel := interopType{id: -1, hash: binding.NewString(), name: binding.NewString(), tags: map[string]map[string]binding.Bool{}}
-	viewmodel.tags = createViewmodelTags(docrepo)
+	viewmodel := interopType{
+		id:   binding.NewInt(),
+		hash: binding.NewString(),
+		name: binding.NewString(),
+		tags: createViewmodelTags(docrepo),
+	}
+	viewmodel.id.Set(-1)
 	// UI components and interaction.
 	lblStatus := widget.NewLabel("")
 	lblStatus.TextStyle.Italic = true
@@ -101,7 +108,7 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 	lblHashValue.Bind(viewmodel.hash)
 	lblHashValue.Truncation = fyne.TextTruncateEllipsis
 	btnCopyHash := widget.NewButtonWithIcon("", theme.ContentCopyIcon(), func() {
-		app.Clipboard().SetContent(objects[viewmodel.id].Id)
+		app.Clipboard().SetContent(objects[builtin.Expect(viewmodel.id.Get())].Id)
 	})
 	btnCopyHash.Importance = widget.LowImportance
 	btnCopyHash.Disable()
@@ -131,40 +138,38 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 	}
 	btnUpdate.Importance = widget.LowImportance
 	btnOpen := widget.NewButtonWithIcon("", theme.MediaPlayIcon(), func() {
-		cmd := exec.Command("xdg-open", docrepo.ObjectPath(objects[viewmodel.id].Id))
+		cmd := exec.Command("xdg-open", docrepo.ObjectPath(objects[builtin.Expect(viewmodel.id.Get())].Id))
 		if err := cmd.Start(); err != nil {
+			updateStatus("Failed to open repository object: "+err.Error(), widget.WarningImportance)
 			log.Warnln("Failed to start/open repository object:", err.Error())
 			return
 		}
 	})
 	btnSave := widget.NewButtonWithIcon("Save", theme.ConfirmIcon(), func() {
-		objects[viewmodel.id].Name = builtin.Expect(viewmodel.name.Get())
+		idx := builtin.Expect(viewmodel.id.Get())
+		objects[idx].Name = builtin.Expect(viewmodel.name.Get())
 		for cat, tags := range viewmodel.tags {
 			for k, v := range tags {
 				if builtin.Expect(v.Get()) {
-					set.Insert(objects[viewmodel.id].Tags[cat], k)
+					set.Insert(objects[idx].Tags[cat], k)
 				} else {
-					set.Remove(objects[viewmodel.id].Tags[cat], k)
+					set.Remove(objects[idx].Tags[cat], k)
 				}
 			}
 		}
-		if err := docrepo.Save(objects[viewmodel.id]); err != nil {
+		if err := docrepo.Save(objects[idx]); err != nil {
 			log.Traceln("Failed to save repo-object:", err.Error())
 			updateStatus("Failed to save updated properties: "+err.Error(), widget.WarningImportance)
 			return
 		}
-		listObjects.RefreshItem(viewmodel.id)
+		listObjects.RefreshItem(idx)
 		btnUpdate.Importance = widget.HighImportance
 		btnUpdate.Refresh()
 	})
 	inputName.Validator = func(s string) error {
-		if viewmodel.valid() {
-			btnOpen.Enable()
-			btnSave.Enable()
+		if len(s) > 0 && !strings.ContainsAny(s, string([]byte{0, '/'})) {
 			return nil
 		} else {
-			btnOpen.Disable()
-			btnSave.Disable()
 			return errors.ErrIllegal
 		}
 	}
@@ -201,16 +206,14 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 		importDialog.Show()
 	})
 	btnRemove := widget.NewButtonWithIcon("", theme.DeleteIcon(), func() {
-		if viewmodel.id < 0 {
-			return
-		}
-		objname := objects[viewmodel.id].Name
+		idx := builtin.Expect(viewmodel.id.Get())
+		objname := objects[idx].Name
 		confirmDialog := dialog.NewConfirm("Remove repository object", "Do you want to remove '"+objname+"'?",
 			func(b bool) {
 				if !b {
 					return
 				}
-				if err := docrepo.Delete(objects[viewmodel.id].Id); err != nil {
+				if err := docrepo.Delete(objects[idx].Id); err != nil {
 					log.Traceln("Repository object deletion failed:", err.Error())
 					updateStatus("Failed to delete object: "+err.Error(), widget.WarningImportance)
 					return
@@ -226,23 +229,19 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 		confirmDialog.Show()
 	})
 	btnRemove.Importance = widget.LowImportance
-	btnRemove.Disable()
 	listObjects.OnSelected = func(id widget.ListItemID) {
 		if id < 0 {
-			viewmodel.id = -1
+			viewmodel.id.Set(-1)
 			viewmodel.hash.Set("")
-			btnCopyHash.Disable()
 			viewmodel.name.Set("")
 			for _, tags := range viewmodel.tags {
 				for _, v := range tags {
 					v.Set(false)
 				}
 			}
-			btnRemove.Disable()
 		} else {
-			viewmodel.id = id
+			viewmodel.id.Set(id)
 			viewmodel.hash.Set(objects[id].Id)
-			btnCopyHash.Enable()
 			viewmodel.name.Set(objects[id].Name)
 			for cat, tags := range viewmodel.tags {
 				for k, v := range tags {
@@ -250,7 +249,6 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 					v.Set(ok)
 				}
 			}
-			btnRemove.Enable()
 		}
 		if tabsTags.SelectedIndex() >= 0 {
 			tabsTags.Selected().Content.(*container.Scroll).ScrollToOffset(fyne.Position{X: 0, Y: 0})
@@ -258,12 +256,31 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 		fyne.Do(tabsTags.Refresh)
 	}
 	listObjects.OnUnselected = func(id widget.ListItemID) {
-		viewmodel.id = -1
+		viewmodel.id.Set(-1)
 		viewmodel.hash.Set("")
-		btnCopyHash.Disable()
 		viewmodel.name.Set("")
-		btnRemove.Disable()
 	}
+	viewmodel.id.AddListener(binding.NewDataListener(func() {
+		if id, err := viewmodel.id.Get(); err == nil && id >= 0 {
+			btnCopyHash.Enable()
+			btnOpen.Enable()
+			btnRemove.Enable()
+		} else {
+			btnCopyHash.Disable()
+			btnOpen.Disable()
+			btnRemove.Disable()
+		}
+	}))
+	validateOnChanged := binding.NewDataListener(func() {
+		if viewmodel.valid() {
+			btnSave.Enable()
+		} else {
+			btnSave.Disable()
+		}
+	})
+	viewmodel.id.AddListener(validateOnChanged)
+	viewmodel.hash.AddListener(validateOnChanged)
+	viewmodel.name.AddListener(validateOnChanged)
 	parent.SetMainMenu(fyne.NewMainMenu(fyne.NewMenu("File", fyne.NewMenuItem("Reload", func() {
 		if err := docrepo.Refresh(); err != nil {
 			log.WarnOnError(err, "Failed to reload repository")
