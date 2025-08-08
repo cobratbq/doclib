@@ -487,7 +487,7 @@ func (r *Repo) OpenObject(objname string) (RepoObj, uint, error) {
 	var obj RepoObj
 	// TODO check allowed properties? (permit unknown properties?, as forward-compatibility?)
 	for _, p := range props {
-		if strings.HasPrefix(p[0], propTagsOldPrefix) || strings.HasPrefix(p[0], propTags0Prefix) {
+		if strings_.AnyPrefix(p[0], propTagsOldPrefix, propTags0Prefix) {
 			// Process arbitrary tag-categories later.
 			continue
 		}
