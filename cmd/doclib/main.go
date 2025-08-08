@@ -70,6 +70,21 @@ func generateTagsTabs(docrepo *repo.Repo, interop *interopType) []*container.Tab
 	return items
 }
 
+func backgroundUpdate(docrepo *repo.Repo, btnUpdate *widget.Button, updateStatus func(string, widget.Importance)) {
+	defer log.Traceln("UI update-button background thread finished.")
+	err := docrepo.Check()
+	fyne.DoAndWait(func() {
+		if err == nil {
+			updateStatus("Check finished.", widget.MediumImportance)
+			btnUpdate.Importance = widget.LowImportance
+		} else {
+			updateStatus("Check finished with errors: "+err.Error(), widget.MediumImportance)
+			btnUpdate.Importance = widget.WarningImportance
+		}
+		btnUpdate.Enable()
+	})
+}
+
 // TODO consider setting both importance and text for status-label upon changing status text (success, warnings).
 // TODO consider adding button to reload repository information, and rebuild tags/checkboxes lists with updated dirs/sub-dirs/content.
 func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
@@ -126,20 +141,7 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 	btnUpdate.OnTapped = func() {
 		updateStatus("Checking repository…", widget.MediumImportance)
 		btnUpdate.Disable()
-		go func() {
-			defer log.Traceln("UI update-button background thread finished.")
-			err := docrepo.Check()
-			fyne.DoAndWait(func() {
-				if err == nil {
-					updateStatus("Check finished.", widget.MediumImportance)
-					btnUpdate.Importance = widget.LowImportance
-				} else {
-					updateStatus("Check finished with errors: "+err.Error(), widget.MediumImportance)
-					btnUpdate.Importance = widget.WarningImportance
-				}
-				btnUpdate.Enable()
-			})
-		}()
+		go backgroundUpdate(docrepo, btnUpdate, updateStatus)
 	}
 	btnUpdate.Importance = widget.LowImportance
 	btnOpen := widget.NewButtonWithIcon("", theme.MediaPlayIcon(), func() {
