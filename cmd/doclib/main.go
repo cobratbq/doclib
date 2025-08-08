@@ -31,7 +31,6 @@ type interopType struct {
 }
 
 func (i *interopType) valid() bool {
-	// FIXME extend name validation to include illegal file-system symbols or do proper filtering before applying to file-system objects.
 	return builtin.Expect(i.id.Get()) >= 0 &&
 		len(builtin.Expect(i.name.Get())) > 0 &&
 		!strings.ContainsAny(builtin.Expect(i.name.Get()), string([]byte{0, '/'}))
@@ -85,8 +84,6 @@ func backgroundUpdate(docrepo *repo.Repo, btnUpdate *widget.Button, updateStatus
 	})
 }
 
-// TODO consider setting both importance and text for status-label upon changing status text (success, warnings).
-// TODO consider adding button to reload repository information, and rebuild tags/checkboxes lists with updated dirs/sub-dirs/content.
 func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Container {
 	objects := repo.ExtractRepoObjectsSorted(docrepo)
 	viewmodel := interopType{
@@ -299,7 +296,6 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 		updateStatus("Repository reloaded.", widget.MediumImportance)
 		parent.Content().Refresh()
 	}))))
-	// TODO long-term, it seems the Tags-tabs don't optimally use vertical space yet.
 	split := container.NewHSplit(
 		container.NewBorder(nil, container.NewHBox(btnImport, btnRemove, layout.NewSpacer(), btnOpenRepoLocation, btnUpdate), nil, nil,
 			listObjects),
