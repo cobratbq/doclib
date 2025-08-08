@@ -97,7 +97,6 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 	tabsTags.Refresh()
 	// TODO needs smaller font, more suitable theme, or plain (unthemed) widgets.
 	listObjects := widget.NewList(func() int { return len(objects) }, func() fyne.CanvasObject {
-		// note: dictate size with wide initial label text at creation
 		return widget.NewLabel("")
 	}, func(id widget.ListItemID, obj fyne.CanvasObject) {
 		obj.(*widget.Label).SetText(objects[id].Name)
@@ -121,7 +120,6 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 		if err := cmd.Start(); err != nil {
 			log.Warnln("Failed to open repository location:", err.Error())
 			updateStatus("Failed to open repository location: "+err.Error(), widget.WarningImportance)
-			return
 		}
 	})
 	btnOpenRepoLocation.Importance = widget.LowImportance
@@ -138,11 +136,10 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 	}
 	btnUpdate.Importance = widget.LowImportance
 	btnOpen := widget.NewButtonWithIcon("", theme.MediaPlayIcon(), func() {
-		cmd := exec.Command("xdg-open", docrepo.ObjectPath(objects[builtin.Expect(viewmodel.id.Get())].Id))
+		cmd := exec.Command("/usr/bin/xdg-open", docrepo.ObjectPath(objects[builtin.Expect(viewmodel.id.Get())].Id))
 		if err := cmd.Start(); err != nil {
-			updateStatus("Failed to open repository object: "+err.Error(), widget.WarningImportance)
 			log.Warnln("Failed to start/open repository object:", err.Error())
-			return
+			updateStatus("Failed to open repository object: "+err.Error(), widget.WarningImportance)
 		}
 	})
 	btnSave := widget.NewButtonWithIcon("Save", theme.ConfirmIcon(), func() {
@@ -190,7 +187,6 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 				log.Traceln("Import-dialog successfully completed.")
 				objects = repo.ExtractRepoObjectsSorted(docrepo)
 				listObjects.UnselectAll()
-				listObjects.Refresh()
 				if id := repo.IndexObjectByID(objects, newobj.Id); id >= 0 {
 					listObjects.Select(id)
 				}
@@ -200,8 +196,8 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 				updateStatus("Failed to import document into repository: "+err.Error(), widget.WarningImportance)
 			}
 		}, parent)
-		importDialog.SetConfirmText("Import")
 		importDialog.SetTitleText("Import document into ")
+		importDialog.SetConfirmText("Import")
 		importDialog.Resize(fyne.Size{Width: 800, Height: 600})
 		importDialog.Show()
 	})
@@ -214,14 +210,13 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 					return
 				}
 				if err := docrepo.Delete(objects[idx].Id); err != nil {
-					log.Traceln("Repository object deletion failed:", err.Error())
+					log.Warnln("Repository object deletion failed:", err.Error())
 					updateStatus("Failed to delete object: "+err.Error(), widget.WarningImportance)
 					return
 				}
 				objects = repo.ExtractRepoObjectsSorted(docrepo)
 				listObjects.UnselectAll()
-				listObjects.Refresh()
-				log.Traceln("Repository object deleted.")
+				log.Infoln("Repository object deleted.")
 				updateStatus("Repository object deleted.", widget.MediumImportance)
 			}, parent)
 		confirmDialog.SetConfirmText("Delete")
@@ -251,7 +246,7 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 			}
 		}
 		if tabsTags.SelectedIndex() >= 0 {
-			tabsTags.Selected().Content.(*container.Scroll).ScrollToOffset(fyne.Position{X: 0, Y: 0})
+			tabsTags.Selected().Content.(*container.Scroll).Offset = fyne.Position{X: 0, Y: 0}
 		}
 		fyne.Do(tabsTags.Refresh)
 	}
@@ -283,7 +278,7 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 	viewmodel.name.AddListener(validateOnChanged)
 	parent.SetMainMenu(fyne.NewMainMenu(fyne.NewMenu("File", fyne.NewMenuItem("Reload", func() {
 		if err := docrepo.Refresh(); err != nil {
-			log.WarnOnError(err, "Failed to reload repository")
+			log.Warnln("Failed to reload repository: " + err.Error())
 			updateStatus("Failed to reload repository: "+err.Error(), widget.WarningImportance)
 			return
 		}
