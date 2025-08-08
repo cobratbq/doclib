@@ -22,16 +22,23 @@ import (
 	"golang.org/x/crypto/blake2b"
 )
 
-const version = "0"
-const subdirRepo = "repo"
-const subdirTitles = "titles"
-const tempFilePrefix = "temp--"
-const repoPropertiesSuffix = ".properties"
-const propVersion = "version"
-const propHash = "hash"
-const propHashspecPrefix = "blake2b:"
-const propName = "name"
-const propTagsPrefix = "tags."
+const (
+	version              = "0"
+	subdirRepo           = "repo"
+	subdirTitles         = "titles"
+	tempFilePrefix       = "temp--"
+	repoPropertiesSuffix = ".properties"
+	propVersion          = "version"
+	propHash             = "hash"
+	propHashspecPrefix   = "blake2b:"
+	propName             = "name"
+	propTagsOldPrefix    = "tags."
+	propTagsOldSeparator = ","
+	propTags0Prefix      = "tags;"
+	propTags0Separator   = ";"
+)
+
+var propTags0IllegalChars = []byte{0, '/'}
 
 func Hash(location string) ([64]byte, error) {
 	if hash, err := hash_.HashFile(builtin.Expect(blake2b.New512(nil)), location); err == nil {
@@ -43,6 +50,14 @@ func Hash(location string) ([64]byte, error) {
 
 func isStandardDir(name string) bool {
 	return name == subdirRepo || name == subdirTitles
+}
+
+func sanitizeTag(name string) string {
+	name = strings.ToLower(name)
+	for idx := strings.IndexAny(name, string(propTags0IllegalChars)); idx >= 0; idx = strings.IndexAny(name, string(propTags0IllegalChars)) {
+		name = name[:idx] + name[idx+1:]
+	}
+	return strings.ReplaceAll(name, propTags0Separator, ",")
 }
 
 type Tag struct {
@@ -79,7 +94,7 @@ func listOptions(location string) ([]Tag, error) {
 	} else {
 		index := []Tag{}
 		for _, e := range entries {
-			index = append(index, Tag{Key: strings.ToLower(e.Name()), Title: e.Name()})
+			index = append(index, Tag{Key: sanitizeTag(e.Name()), Title: e.Name()})
 		}
 		return index, nil
 	}
@@ -95,8 +110,7 @@ func readTagEntries(location string) (map[string][]Tag, error) {
 		if !e.IsDir() || isStandardDir(e.Name()) || strings.HasPrefix(e.Name(), ".") {
 			continue
 		}
-		// FIXME Clean tag-names more (avoid ',' and maybe some other chars), different for tags and categories?
-		index[strings.ToLower(e.Name())] = builtin.Expect(listOptions(filepath.Join(location, e.Name())))
+		index[sanitizeTag(e.Name())] = builtin.Expect(listOptions(filepath.Join(location, e.Name())))
 	}
 	return index, nil
 }
@@ -229,7 +243,7 @@ func (r *Repo) checkBadTags() error {
 						continue
 					}
 					var repoobj RepoObj
-					if repoobj, err = r.OpenObject(filepath.Base(repoobjpath)); err != nil {
+					if repoobj, _, err = r.OpenObject(filepath.Base(repoobjpath)); err != nil {
 						log.Warnln("Failed to open repo-object:", err.Error())
 						continue
 					}
@@ -314,9 +328,13 @@ func (r *Repo) Check() error {
 			log.Warnln(e.Name()+repoPropertiesSuffix, ": properties-file is missing.")
 		} else if info.Mode()&os.ModeType != 0 {
 			log.Warnln(e.Name()+repoPropertiesSuffix, ": properties-file is not a regular file.")
-		} else if o, err := r.OpenObject(e.Name()); err != nil {
+		} else if o, needsUpgrade, err := r.OpenObject(e.Name()); err != nil {
 			log.Warnln(e.Name(), ": failed to parse properties: ", err.Error())
 		} else {
+			if needsUpgrade > 0 {
+				log.Infoln("Upgrading properties for " + e.Name())
+				log.WarnOnError(r.Save(o), e.Name()+": failed to save repo-object for format-upgrade:")
+			}
 			if o.Id != e.Name() {
 				log.Warnln(e.Name(), ": invalid properties", e.Name(), o.Id)
 			}
@@ -349,7 +367,7 @@ func (r *Repo) Check() error {
 		path := filepath.Join(r.location, subdirTitles, e.Name())
 		if targetpath, err := os.Readlink(path); err != nil {
 			log.Warnln(e.Name(), ": failed to query symlink without error:", err.Error())
-		} else if obj, err := r.OpenObject(filepath.Base(targetpath)); err != nil {
+		} else if obj, _, err := r.OpenObject(filepath.Base(targetpath)); err != nil {
 			// TODO should I be checking that linkpath has characteristics of repo-object before drawing conclusions?
 			log.Traceln("titles symlink does not correctly link to repo-object. Deleting…")
 			if err := os.Remove(path); err != nil {
@@ -386,7 +404,7 @@ func (r *Repo) writeProperties(objname, name string, tags map[string]map[string]
 		}
 		t := maps_.ExtractKeys(g)
 		slices.Sort(t)
-		buffer = append(buffer, []byte(propTagsPrefix+group+"="+strings.Join(t, ",")+"\n")...)
+		buffer = append(buffer, []byte(propTags0Prefix+group+"="+strings.Join(t, propTags0Separator)+"\n")...)
 	}
 	return os.WriteFile(r.repofilepath(objname)+repoPropertiesSuffix, buffer, 0o600)
 }
@@ -398,7 +416,7 @@ type RepoObj struct {
 	Tags  map[string]map[string]struct{}
 }
 
-// FIXME consider what to do when freshly written object already has '.properties' file. This likely means duplicate import, meaning that present properties may very well be better than starting fresh.
+// TODO consider what to do when freshly written object already has '.properties' file. This likely means duplicate import, meaning that present properties may very well be better than starting fresh.
 func (r *Repo) Acquire(reader io.Reader, name string) (RepoObj, error) {
 	log.Traceln("Acquiring new document into repository…")
 	tempf, tempfname, err := r.temprepofile()
@@ -422,9 +440,9 @@ func (r *Repo) Acquire(reader io.Reader, name string) (RepoObj, error) {
 	if err := r.writeProperties(checksumhex, name, map[string]map[string]struct{}{}); err != nil {
 		return RepoObj{}, errors.Context(err, "failed to write properties-file")
 	}
-	// TODO get RepoObj instance from writeProperties, instead of going through Open?
 	log.Traceln("Completed acquisition. (object: " + checksumhex + ")")
-	return r.OpenObject(checksumhex)
+	obj, _, err := r.OpenObject(checksumhex)
+	return obj, err
 }
 
 func (r *Repo) Delete(id string) error {
@@ -449,7 +467,8 @@ func (r *Repo) ObjectPath(objname string) string {
 	return r.repofilepath(objname)
 }
 
-func (r *Repo) OpenObject(objname string) (RepoObj, error) {
+func (r *Repo) OpenObject(objname string) (RepoObj, uint, error) {
+	var needsUpgrade uint
 	propspath := r.repofilepath(objname + repoPropertiesSuffix)
 	props, err := bufio_.OpenFileProcessStringLinesFunc(propspath, '\n', func(s string) ([2]string, error) {
 		// TODO fine-tuning trimming whitespace for comment-line matching
@@ -463,23 +482,23 @@ func (r *Repo) OpenObject(objname string) (RepoObj, error) {
 		return [2]string{}, errors.ErrIllegal
 	})
 	if err != nil {
-		return RepoObj{}, errors.Context(err, "failed to parse properties for "+objname)
+		return RepoObj{}, needsUpgrade, errors.Context(err, "failed to parse properties for "+objname)
 	}
 	var obj RepoObj
 	// TODO check allowed properties? (permit unknown properties?, as forward-compatibility?)
 	for _, p := range props {
-		if strings.HasPrefix(p[0], propTagsPrefix) {
+		if strings.HasPrefix(p[0], propTagsOldPrefix) || strings.HasPrefix(p[0], propTags0Prefix) {
 			// Process arbitrary tag-categories later.
 			continue
 		}
 		switch p[0] {
 		case propVersion:
 			if p[1] != version {
-				return RepoObj{}, errors.Context(errors.ErrIllegal, "version of properties is not supported")
+				return RepoObj{}, needsUpgrade, errors.Context(errors.ErrFailure, "version of properties is not supported")
 			}
 		case propHash:
 			if !strings.HasPrefix(p[1], propHashspecPrefix) {
-				return RepoObj{}, errors.Context(errors.ErrIllegal, "hashspec must contain prefix for hash function")
+				return RepoObj{}, needsUpgrade, errors.Context(errors.ErrIllegal, "hashspec must contain prefix for hash function")
 			}
 			obj.Id = strings.TrimPrefix(p[1], propHashspecPrefix)
 		case propName:
@@ -494,23 +513,38 @@ func (r *Repo) OpenObject(objname string) (RepoObj, error) {
 		obj.Tags[cat] = map[string]struct{}{}
 	}
 	for _, p := range props {
-		if !strings.HasPrefix(p[0], propTagsPrefix) {
-			continue
-		}
-		cat := strings.TrimPrefix(p[0], propTagsPrefix)
-		if _, ok := obj.Tags[cat]; !ok {
-			// Primarily, preserve existing tag-properties even if not currently in use.
-			obj.Tags[cat] = map[string]struct{}{}
-		}
-		for _, t := range strings.Split(p[1], ",") {
-			if len(t) == 0 {
-				continue
+		switch {
+		case strings.HasPrefix(p[0], propTagsOldPrefix):
+			needsUpgrade += 1
+			cat := strings.TrimSpace(strings.TrimPrefix(p[0], propTagsOldPrefix))
+			if _, ok := obj.Tags[cat]; !ok {
+				obj.Tags[cat] = map[string]struct{}{}
 			}
-			set.Insert(obj.Tags[cat], strings.TrimSpace(t))
+			for _, t := range strings.Split(p[1], propTagsOldSeparator) {
+				t = strings.TrimSpace(t)
+				if len(t) == 0 {
+					continue
+				}
+				set.Insert(obj.Tags[cat], t)
+			}
+		case strings.HasPrefix(p[0], propTags0Prefix):
+			cat := strings.TrimSpace(strings.TrimPrefix(p[0], propTags0Prefix))
+			if _, ok := obj.Tags[cat]; !ok {
+				obj.Tags[cat] = map[string]struct{}{}
+			}
+			for _, t := range strings.Split(p[1], propTags0Separator) {
+				t = strings.TrimSpace(t)
+				if len(t) == 0 {
+					continue
+				}
+				set.Insert(obj.Tags[cat], t)
+			}
+		default:
+			continue
 		}
 	}
 	log.Traceln("Current tags:", obj.Tags)
-	return obj, nil
+	return obj, needsUpgrade, nil
 }
 
 // TODO could use caching in case the repository has not changed. (Is this really possible if we also expect to read some values from the file system structure?)
@@ -525,7 +559,7 @@ func (r *Repo) List() ([]RepoObj, error) {
 		if strings.HasSuffix(e.Name(), repoPropertiesSuffix) {
 			continue
 		}
-		if obj, err := r.OpenObject(e.Name()); err == nil {
+		if obj, _, err := r.OpenObject(e.Name()); err == nil {
 			objects = append(objects, obj)
 		} else {
 			log.Infoln("Skipping", e.Name(), ": failed to open repo-object:", err.Error())
