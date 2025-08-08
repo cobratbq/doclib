@@ -110,7 +110,6 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 		app.Clipboard().SetContent(objects[builtin.Expect(viewmodel.id.Get())].Id)
 	})
 	btnCopyHash.Importance = widget.LowImportance
-	btnCopyHash.Disable()
 	lblName := widget.NewLabel("name:")
 	lblName.TextStyle.Italic = true
 	inputName := widget.NewEntryWithData(viewmodel.name)
