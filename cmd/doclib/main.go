@@ -124,14 +124,22 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 	btnOpenRepoLocation.Importance = widget.LowImportance
 	btnUpdate := widget.NewButtonWithIcon("Update", theme.ViewRefreshIcon(), nil)
 	btnUpdate.OnTapped = func() {
-		if err := docrepo.Check(); err == nil {
-			updateStatus("Check finished.", widget.MediumImportance)
-			btnUpdate.Importance = widget.LowImportance
-		} else {
-			updateStatus("Check finished with errors:"+err.Error(), widget.MediumImportance)
-			btnUpdate.Importance = widget.WarningImportance
-		}
-		btnUpdate.Refresh()
+		updateStatus("Checking repository…", widget.MediumImportance)
+		btnUpdate.Disable()
+		go func() {
+			defer log.Traceln("UI update-button background thread finished.")
+			err := docrepo.Check()
+			fyne.DoAndWait(func() {
+				if err == nil {
+					updateStatus("Check finished.", widget.MediumImportance)
+					btnUpdate.Importance = widget.LowImportance
+				} else {
+					updateStatus("Check finished with errors: "+err.Error(), widget.MediumImportance)
+					btnUpdate.Importance = widget.WarningImportance
+				}
+				btnUpdate.Enable()
+			})
+		}()
 	}
 	btnUpdate.Importance = widget.LowImportance
 	btnOpen := widget.NewButtonWithIcon("", theme.MediaPlayIcon(), func() {
