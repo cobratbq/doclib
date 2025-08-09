@@ -6,7 +6,7 @@ _DocLib_ stores objects, e.g. documents, in a repository-directory and creates s
 
 ## How does it work?
 
-Currently there are two predefined directories `repo` and `titles`, which contain immutable (read-only) binary content and symlinks by name to every document, respectively. Any other directories are treated as categories with sub-directories for individual tags. The `repo/<checksum>.properties` files contain properties for their corresponding binary objects. Directories on the file-system define which categories and tags are available.
+Currently there are two predefined directories `repo` and `titles`, which contain immutable (read-only) binary content and symlinks by name to every document, respectively. Any other directories are treated as categories, with sub-directories for individual tags. The `repo/<checksum>.properties` files contain properties for their corresponding binary objects. Directories on the file-system define which categories and tags are available.
 
 The checking process (re)populates the various tag-directories with symlinks to the binary objects in the repository, and does general content checking. Categories and tags are stored in sanitized format, allowing for arbitrary capitalization, adaptable to preference, on the file-system and in the management UI.
 
@@ -14,9 +14,11 @@ _DocLib_ provides a basic management interface for managing objects, while the u
 
 ## Getting started
 
-Use flag `-repo` to specify an existing, empty directory for use as object-repository. For example `./doclib -repo data/`.
+Use flag `-repo` to specify an existing, empty directory for use as object-repository.
 
-_This application is still in development. Although "checking" is highly specific, it does make changes in the repository-directory. Results may be unpredictable if an arbitrary directory is chosen._
+For example: `./doclib -repo data/`, starts the UI with the repository pointing to directory `data`.
+
+_This application is still in development. There may be problems. Although "checking" is highly specific, it does make changes. Results may be unpredictable if an arbitrary directory is chosen. Furthermore, it is recommended to keep the repository in version control, if only for the added benefits._
 
 ## Technical
 
