@@ -25,3 +25,7 @@ _This application is still in development. Although "checking" is highly specifi
 - Build without `tracelog` build-tag, to disable `[trace]` log entries for reduced verbosity.
 
 __note__ The _Check_-process produces output on the commandline to report on issues.
+
+## License
+
+See [LICENSE](<LICENSE>) for the license under which this software is made available.
