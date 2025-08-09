@@ -284,7 +284,7 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 	viewmodel.name.AddListener(validateOnChanged)
 	parent.SetMainMenu(fyne.NewMainMenu(fyne.NewMenu("File", fyne.NewMenuItem("Reload", func() {
 		// note: keeping this blocking as most UI content is dependent on this process anyways.
-		if err := docrepo.Refresh(); err != nil {
+		if err := docrepo.Reload(); err != nil {
 			log.Warnln("Failed to reload repository: " + err.Error())
 			updateStatus("Failed to reload repository: "+err.Error(), widget.WarningImportance)
 			return

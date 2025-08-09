@@ -135,7 +135,7 @@ func OpenRepository(location string) (Repo, error) {
 	return Repo{location: location, cats: index}, nil
 }
 
-func (r *Repo) Refresh() error {
+func (r *Repo) Reload() error {
 	index, err := readTagEntries(r.location)
 	if err == nil {
 		r.cats = index
