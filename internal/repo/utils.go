@@ -21,7 +21,7 @@ func IndexObjectByID(collection []RepoObj, id string) int {
 }
 
 func objNameCompare(a, b RepoObj) int {
-	return strings.Compare(a.Name, b.Name)
+	return strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name))
 }
 
 func ExtractRepoObjectsSorted(docrepo *Repo) []RepoObj {
