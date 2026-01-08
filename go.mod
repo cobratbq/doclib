@@ -4,7 +4,7 @@ go 1.23.10
 
 require (
 	fyne.io/fyne/v2 v2.6.3
-	github.com/cobratbq/goutils v0.0.0-20251015193549-9b786e450f31
+	github.com/cobratbq/goutils v0.0.0-20260108190612-48ae90722964
 	golang.org/x/crypto v0.40.0
 )
 

@@ -8,6 +8,10 @@ github.com/BurntSushi/toml v1.4.0 h1:kuoIxZQy2WRRk1pttg9asf+WVv6tWQuBNVmK8+nqPr0
 github.com/BurntSushi/toml v1.4.0/go.mod h1:ukJfTF/6rtPPRCnwkur4qwRxa8vTRFBF0uk2lLoLwho=
 github.com/cobratbq/goutils v0.0.0-20250809001759-e11fb3faf899 h1:wwCKSLeCwObEjUOqKAh14yDn27T2XgvriJF0FuyXR4k=
 github.com/cobratbq/goutils v0.0.0-20250809001759-e11fb3faf899/go.mod h1:R3RuxFTWkwhpJtqQdku1cJqyeSuE4VboBT6H/gmLuHY=
+github.com/cobratbq/goutils v0.0.0-20251209034855-76288701f32e h1:XCVWZZRQZc9cPDkFvJTCoLGsAPMpUhCcDj7jFHxSM9M=
+github.com/cobratbq/goutils v0.0.0-20251209034855-76288701f32e/go.mod h1:R3UmkyMY14TQhethYMSkyTd935by8+Zk9y24f6bIoQM=
+github.com/cobratbq/goutils v0.0.0-20260108190612-48ae90722964 h1:oO44r85x8gvTEdJnPWKsYVk5/e7gd5nTFKA2uIkGRmA=
+github.com/cobratbq/goutils v0.0.0-20260108190612-48ae90722964/go.mod h1:R3UmkyMY14TQhethYMSkyTd935by8+Zk9y24f6bIoQM=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/felixge/fgprof v0.9.3 h1:VvyZxILNuCiUCSXtPtYmmtGvb65nqXh2QFWc0Wpf2/g=
