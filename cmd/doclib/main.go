@@ -70,18 +70,18 @@ func generateTagsTabs(docrepo *repo.Repo, interop *interopType) []*container.Tab
 	return items
 }
 
-func backgroundUpdate(docrepo *repo.Repo, btnUpdate *widget.Button, updateStatus func(string, widget.Importance)) {
+func backgroundUpdate(docrepo *repo.Repo, btnCheck *widget.Button, updateStatus func(string, widget.Importance)) {
 	defer log.Traceln("UI update-button background thread finished.")
 	err := docrepo.Check()
 	fyne.DoAndWait(func() {
 		if err == nil {
 			updateStatus("Check finished.", widget.MediumImportance)
-			btnUpdate.Importance = widget.LowImportance
+			btnCheck.Importance = widget.LowImportance
 		} else {
 			updateStatus("Check finished with errors: "+err.Error(), widget.MediumImportance)
-			btnUpdate.Importance = widget.WarningImportance
+			btnCheck.Importance = widget.WarningImportance
 		}
-		btnUpdate.Enable()
+		btnCheck.Enable()
 	})
 }
 
@@ -135,14 +135,13 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 		}
 	})
 	btnOpenRepoLocation.Importance = widget.LowImportance
-	// FIXME rename btnUpdate to btnCheck (now better reflects actual function)
-	btnUpdate := widget.NewButtonWithIcon("Check", theme.ViewRefreshIcon(), nil)
-	btnUpdate.OnTapped = func() {
+	btnCheck := widget.NewButtonWithIcon("Check", theme.ViewRefreshIcon(), nil)
+	btnCheck.OnTapped = func() {
 		updateStatus("Checking repository…", widget.MediumImportance)
-		btnUpdate.Disable()
-		go backgroundUpdate(docrepo, btnUpdate, updateStatus)
+		btnCheck.Disable()
+		go backgroundUpdate(docrepo, btnCheck, updateStatus)
 	}
-	btnUpdate.Importance = widget.LowImportance
+	btnCheck.Importance = widget.LowImportance
 	btnOpen := widget.NewButtonWithIcon("", theme.MediaPlayIcon(), func() {
 		cmd := exec.Command("/usr/bin/xdg-open", docrepo.ObjectPath(objects[builtin.Expect(viewmodel.id.Get())].Id))
 		if err := cmd.Start(); err != nil {
@@ -168,8 +167,8 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 			return
 		}
 		listObjects.RefreshItem(idx)
-		btnUpdate.Importance = widget.HighImportance
-		btnUpdate.Refresh()
+		btnCheck.Importance = widget.HighImportance
+		btnCheck.Refresh()
 	})
 	inputName.Validator = func(s string) error {
 		if len(s) > 0 && !strings.ContainsAny(s, string([]byte{0, '/'})) {
@@ -299,7 +298,7 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 		parent.Content().Refresh()
 	}))))
 	split := container.NewHSplit(
-		container.NewBorder(nil, container.NewHBox(btnImport, btnRemove, layout.NewSpacer(), btnOpenRepoLocation, btnUpdate), nil, nil,
+		container.NewBorder(nil, container.NewHBox(btnImport, btnRemove, layout.NewSpacer(), btnOpenRepoLocation, btnCheck), nil, nil,
 			listObjects),
 		container.NewBorder(
 			container.New(layout.NewFormLayout(),
