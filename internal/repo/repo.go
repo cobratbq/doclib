@@ -10,11 +10,10 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/cobratbq/goutils/assert"
 	bufio_ "github.com/cobratbq/goutils/std/bufio"
 	"github.com/cobratbq/goutils/std/builtin"
 	"github.com/cobratbq/goutils/std/builtin/maps"
-	maps_ "github.com/cobratbq/goutils/std/builtin/maps"
-	"github.com/cobratbq/goutils/std/builtin/set"
 	"github.com/cobratbq/goutils/std/errors"
 	hash_ "github.com/cobratbq/goutils/std/hash"
 	io_ "github.com/cobratbq/goutils/std/io"
@@ -35,9 +34,7 @@ const (
 	propHashspecPrefix   = "blake2b:"
 	propName             = "name"
 	propTagsOldPrefix    = "tags."
-	propTagsOldSeparator = ","
 	propTags0Prefix      = "tags;"
-	propTags0Separator   = ";"
 )
 
 var propTags0IllegalChars = []byte{0, '/'}
@@ -52,14 +49,6 @@ func Hash(location string) ([64]byte, error) {
 
 func isStandardDir(name string) bool {
 	return name == subdirRepo || name == subdirTitles
-}
-
-func sanitizeTag(name string) string {
-	name = strings.ToLower(name)
-	for idx := strings.IndexAny(name, string(propTags0IllegalChars)); idx >= 0; idx = strings.IndexAny(name, string(propTags0IllegalChars)) {
-		name = name[:idx] + name[idx+1:]
-	}
-	return strings.ReplaceAll(name, propTags0Separator, ",")
 }
 
 type Tag struct {
@@ -96,7 +85,7 @@ func listOptions(location string) ([]Tag, error) {
 	} else {
 		index := []Tag{}
 		for _, e := range entries {
-			index = append(index, Tag{Key: sanitizeTag(e.Name()), Title: e.Name()})
+			index = append(index, Tag{Key: e.Name(), Title: e.Name()})
 		}
 		return index, nil
 	}
@@ -112,7 +101,7 @@ func readTagEntries(location string) (map[string][]Tag, error) {
 		if !e.IsDir() || isStandardDir(e.Name()) || strings.HasPrefix(e.Name(), ".") {
 			continue
 		}
-		index[sanitizeTag(e.Name())] = builtin.Expect(listOptions(filepath.Join(location, e.Name())))
+		index[e.Name()] = builtin.Expect(listOptions(filepath.Join(location, e.Name())))
 	}
 	return index, nil
 }
@@ -164,19 +153,13 @@ func (r *Repo) Tags(category string) []Tag {
 	}
 }
 
-func (r *Repo) checkTagsForObject(id, name string, tagCats map[string]map[string]struct{}) error {
-	log.Traceln("Repo-object tags:", tagCats)
+func (r *Repo) checkTagsForObject(id, name string) error {
 	entries, err := os.ReadDir(r.location)
 	if err != nil {
 		return errors.Context(err, "failed to open root repository directory for tags processing")
 	}
 	for _, e := range entries {
 		if !e.IsDir() || isStandardDir(e.Name()) || strings.HasPrefix(e.Name(), ".") {
-			continue
-		}
-		// TODO we don't currently check if tag-names are used for which there exists no directory
-		tags, ok := tagCats[strings.ToLower(e.Name())]
-		if !ok {
 			continue
 		}
 		tagdirs, err := os.ReadDir(filepath.Join(r.location, e.Name()))
@@ -189,21 +172,15 @@ func (r *Repo) checkTagsForObject(id, name string, tagCats map[string]map[string
 				continue
 			}
 			path := filepath.Join(r.location, e.Name(), t.Name(), name)
-			linkExists := os_.ExistsIsSymlink(path)
-			_, tagExists := tags[strings.ToLower(t.Name())]
-			switch {
-			case !tagExists && linkExists:
-				if err := os.Remove(path); err == nil {
-					log.Debugln("Removed symlink for untagged object at:", path)
-				} else {
-					log.Warnln("Failed to remove unexpected symlink", path, err.Error())
-				}
-			case tagExists && !linkExists:
-				if err := os.Symlink(filepath.Join("..", "..", subdirRepo, id), path); err == nil {
-					log.Debugln("Created symlink for tagged object at:", path)
-				} else {
-					log.Warnln("Failed to create missing symlink", path, err.Error())
-				}
+			relobjpath := filepath.Join("..", "..", subdirRepo, id)
+			if info, err := os.Lstat(path); err != nil {
+				continue
+			} else if info.Mode()&os.ModeSymlink == 0 {
+				log.Warnln("Foreign object at", path, ". Not making changes.")
+				continue
+			} else if linkpath := builtin.Expect(os.Readlink(path)); linkpath != relobjpath {
+				log.Traceln("Tag symlink points to different repository-object. This will be fixed in different step of the checking-process.")
+				continue
 			}
 		}
 	}
@@ -239,17 +216,24 @@ func (r *Repo) checkBadTags() error {
 				log.Traceln("Processing symlink '" + link.Name() + "'…")
 				linkpath := filepath.Join(r.location, e.Name(), t.Name(), link.Name())
 				if _, err := os.Stat(linkpath); err == nil {
-					var repoobjpath string
-					if repoobjpath, err = os.Readlink(linkpath); err != nil {
+					relobjpath, err := os.Readlink(linkpath)
+					if err != nil {
 						log.Warnln("Failed to read repo-object path from symlink:", err.Error())
 						continue
 					}
-					var repoobj RepoObj
-					if repoobj, _, err = r.OpenObject(filepath.Base(repoobjpath)); err != nil {
+					repoobj, err := r.OpenObject(filepath.Base(relobjpath))
+					if err != nil {
 						log.Warnln("Failed to open repo-object:", err.Error())
 						continue
 					}
 					if link.Name() != repoobj.Name {
+						expectedpath := filepath.Join(r.location, e.Name(), t.Name(), repoobj.Name)
+						if !os_.Exists(expectedpath) {
+							os.Symlink(filepath.Join("..", "..", subdirRepo, repoobj.Id), expectedpath)
+							log.Debugln("Created symlink with correct name at:", expectedpath)
+						} else {
+							log.Traceln("Symlink with correct name already exists.")
+						}
 						// Symlink with (most likely) outdated name. Can be removed, as we would already
 						// (re)create the missing symlink if we wouldn't find it at the expected name.
 						if err = os.Remove(linkpath); err == nil {
@@ -272,7 +256,6 @@ func (r *Repo) checkBadTags() error {
 	return nil
 }
 
-// TODO add param and distinguish between reporting-only and fixing issues.
 // FIXME see if we can reliably determine that repo-directory truly is a repository before making changes.
 func (r *Repo) Check() error {
 	var entries []os.DirEntry
@@ -288,7 +271,7 @@ func (r *Repo) Check() error {
 		log.Traceln("Processing repo-entry…", e.Name())
 		// Any non-regular file-system object is a foreign entity.
 		if !e.Type().IsRegular() || strings.HasPrefix(e.Name(), ".") {
-			log.Infoln(e.Name(), ": is a foreign object.")
+			log.Warnln(e.Name(), ": is a foreign object.")
 			continue
 		}
 		// Check if properties-file has a corresponding repository object.
@@ -330,13 +313,9 @@ func (r *Repo) Check() error {
 			log.Warnln(e.Name()+repoPropertiesSuffix, ": properties-file is missing.")
 		} else if info.Mode()&os.ModeType != 0 {
 			log.Warnln(e.Name()+repoPropertiesSuffix, ": properties-file is not a regular file.")
-		} else if o, needsUpgrade, err := r.OpenObject(e.Name()); err != nil {
+		} else if o, err := r.OpenObject(e.Name()); err != nil {
 			log.Warnln(e.Name(), ": failed to parse properties: ", err.Error())
 		} else {
-			if needsUpgrade > 0 {
-				log.Infoln("Upgrading properties for " + e.Name())
-				log.WarnOnError(r.Save(o), e.Name()+": failed to save repo-object for format-upgrade:")
-			}
 			if o.Id != e.Name() {
 				log.Warnln(e.Name(), ": invalid properties", e.Name(), o.Id)
 			}
@@ -355,7 +334,7 @@ func (r *Repo) Check() error {
 				log.Warnln("Symlink does not point to expected repo-object. Duplicate names are in use:", targetpath)
 			}
 			// Verify symlinks for tags that are expected for this specific object.
-			if err := r.checkTagsForObject(o.Id, o.Name, o.Tags); err != nil {
+			if err := r.checkTagsForObject(o.Id, o.Name); err != nil {
 				log.Warnln("Failure during tags processing:", err.Error())
 			}
 		}
@@ -369,7 +348,7 @@ func (r *Repo) Check() error {
 		path := filepath.Join(r.location, subdirTitles, e.Name())
 		if targetpath, err := os.Readlink(path); err != nil {
 			log.Warnln(e.Name(), ": failed to query symlink without error:", err.Error())
-		} else if obj, _, err := r.OpenObject(filepath.Base(targetpath)); err != nil {
+		} else if obj, err := r.OpenObject(filepath.Base(targetpath)); err != nil {
 			// TODO should I be checking that linkpath has characteristics of repo-object before drawing conclusions?
 			log.Traceln("titles symlink does not correctly link to repo-object. Deleting…")
 			if err := os.Remove(path); err != nil {
@@ -389,7 +368,6 @@ func (r *Repo) Check() error {
 		}
 	}
 
-	// FIXME how to handle result from checkBadTags, do we even care?
 	if err := r.checkBadTags(); err != nil {
 		log.Warnln("Result of checkBrokenTags:", err.Error())
 	}
@@ -398,24 +376,65 @@ func (r *Repo) Check() error {
 	return nil
 }
 
-func (r *Repo) writeProperties(objname, name string, tags map[string]map[string]struct{}) error {
+func (r *Repo) writeProperties(objname, name string) error {
 	var buffer = []byte(propVersion + "=" + version + "\n" + propHash + "=" + propHashspecPrefix + objname + "\n" + propName + "=" + name + "\n")
-	for group, g := range tags {
-		if len(g) == 0 {
-			continue
-		}
-		t := maps_.ExtractKeys(g)
-		slices.Sort(t)
-		buffer = append(buffer, []byte(propTags0Prefix+group+"="+strings.Join(t, propTags0Separator)+"\n")...)
-	}
 	return os.WriteFile(r.repofilepath(objname)+repoPropertiesSuffix, buffer, 0o600)
 }
 
 type RepoObj struct {
-	Id    string
-	Name  string
-	Props map[string]string
-	Tags  map[string]map[string]struct{}
+	Id   string
+	Name string
+}
+
+func (r *Repo) Tagged(cat, tag string, obj *RepoObj) bool {
+	cat = assert.None(filepath.Base(cat), "", ".", "..", subdirRepo, subdirTitles)
+	tag = assert.None(filepath.Base(tag), "", ".", "..")
+	return os_.ExistsIsSymlink(filepath.Join(r.location, cat, tag, obj.Name))
+}
+
+func (r *Repo) Tag(cat, tag string, obj *RepoObj) error {
+	cat = assert.None(filepath.Base(cat), "", ".", "..", subdirRepo, subdirTitles)
+	tag = assert.None(filepath.Base(tag), "", ".", "..")
+	path := filepath.Join(r.location, cat, tag, obj.Name)
+	log.Traceln("Tagging path:", path)
+	if info, err := os.Lstat(path); err != nil {
+		// continue with symlinking
+	} else if info.Mode()&os.ModeSymlink == 0 {
+		log.Warnln("Entry exists at tag location, but is not a symlink.")
+		return errors.Context(errors.ErrFailure, "Entry is not a symlink: "+path)
+	} else {
+		log.Traceln("Symlink already exists at tag location:", path)
+		return nil
+	}
+	if err := os.Symlink(filepath.Join("..", "..", subdirRepo, obj.Id), path); err != nil {
+		log.Warnln("Failed to create missing symlink:", path, err.Error())
+		return errors.Context(err, "create symlink at "+path)
+	}
+	log.Traceln("Created symlink for tagged object at:", path)
+	return nil
+}
+
+func (r *Repo) Untag(cat, tag string, obj *RepoObj) error {
+	cat = assert.None(filepath.Base(cat), "", ".", "..", subdirRepo, subdirTitles)
+	tag = assert.None(filepath.Base(tag), "", ".", "..")
+	path := filepath.Join(r.location, cat, tag, obj.Name)
+	log.Traceln("Untagging path:", path)
+	expected := filepath.Join("..", "..", subdirRepo, obj.Id)
+	if info, err := os.Lstat(path); err != nil {
+		log.Traceln("Symlink for untagged object does not exist at:", path)
+		return nil
+	} else if info.Mode()&os.ModeSymlink == 0 {
+		log.Warnln("Entry for untagged object is not a symlink:", path)
+		return errors.Context(errors.ErrFailure, "not a symlink")
+	} else if linkpath, _ := os.Readlink(path); linkpath != expected {
+		log.Warnln("Not removing link '"+path+"' that points to a different object:", linkpath)
+		return errors.Context(errors.ErrFailure, "link to different repository-object")
+	} else if err := os.Remove(path); err != nil {
+		log.Warnln("Failed to remove symlink:", path, err.Error())
+		return errors.Context(err, "remove symlink at "+path)
+	}
+	log.Traceln("Removed symlink for untagged object at:", path)
+	return nil
 }
 
 // TODO consider what to do when freshly written object already has '.properties' file. This likely means duplicate import, meaning that present properties may very well be better than starting fresh.
@@ -439,11 +458,11 @@ func (r *Repo) Acquire(reader io.Reader, name string) (RepoObj, error) {
 	if err := os.Rename(tempfname, r.repofilepath(checksumhex)); err != nil {
 		return RepoObj{}, errors.Context(err, "failed to move temporary file '"+tempfname+"' to definite repo-object location '"+checksumhex+"'")
 	}
-	if err := r.writeProperties(checksumhex, name, map[string]map[string]struct{}{}); err != nil {
+	if err := r.writeProperties(checksumhex, name); err != nil {
 		return RepoObj{}, errors.Context(err, "failed to write properties-file")
 	}
 	log.Traceln("Completed acquisition. (object: " + checksumhex + ")")
-	obj, _, err := r.OpenObject(checksumhex)
+	obj, err := r.OpenObject(checksumhex)
 	return obj, err
 }
 
@@ -461,16 +480,14 @@ func (r *Repo) Delete(id string) error {
 
 // Save saves updated repo-object properties to the repository.
 func (r *Repo) Save(obj RepoObj) error {
-	// FIXME update symlinks?
-	return r.writeProperties(obj.Id, obj.Name, obj.Tags)
+	return r.writeProperties(obj.Id, obj.Name)
 }
 
 func (r *Repo) ObjectPath(objname string) string {
 	return r.repofilepath(objname)
 }
 
-func (r *Repo) OpenObject(objname string) (RepoObj, uint, error) {
-	var needsUpgrade uint
+func (r *Repo) OpenObject(objname string) (RepoObj, error) {
 	propspath := r.repofilepath(objname + repoPropertiesSuffix)
 	props, err := bufio_.OpenFileProcessStringLinesFunc(propspath, '\n', func(s string) ([2]string, error) {
 		// TODO fine-tuning trimming whitespace for comment-line matching
@@ -484,7 +501,7 @@ func (r *Repo) OpenObject(objname string) (RepoObj, uint, error) {
 		return [2]string{}, errors.ErrIllegal
 	})
 	if err != nil {
-		return RepoObj{}, needsUpgrade, errors.Context(err, "failed to parse properties for "+objname)
+		return RepoObj{}, errors.Context(err, "failed to parse properties for "+objname)
 	}
 	var obj RepoObj
 	// TODO check allowed properties? (permit unknown properties?, as forward-compatibility?)
@@ -496,11 +513,11 @@ func (r *Repo) OpenObject(objname string) (RepoObj, uint, error) {
 		switch p[0] {
 		case propVersion:
 			if p[1] != version {
-				return RepoObj{}, needsUpgrade, errors.Context(errors.ErrFailure, "version of properties is not supported")
+				return RepoObj{}, errors.Context(errors.ErrFailure, "version of properties is not supported")
 			}
 		case propHash:
 			if !strings.HasPrefix(p[1], propHashspecPrefix) {
-				return RepoObj{}, needsUpgrade, errors.Context(errors.ErrIllegal, "hashspec must contain prefix for hash function")
+				return RepoObj{}, errors.Context(errors.ErrIllegal, "hashspec must contain prefix for hash function")
 			}
 			obj.Id = strings.TrimPrefix(p[1], propHashspecPrefix)
 		case propName:
@@ -510,43 +527,7 @@ func (r *Repo) OpenObject(objname string) (RepoObj, uint, error) {
 			panic("To be implemented")
 		}
 	}
-	obj.Tags = map[string]map[string]struct{}{}
-	for cat := range r.cats {
-		obj.Tags[cat] = map[string]struct{}{}
-	}
-	for _, p := range props {
-		switch {
-		case strings.HasPrefix(p[0], propTagsOldPrefix):
-			needsUpgrade += 1
-			cat := strings.TrimSpace(strings.TrimPrefix(p[0], propTagsOldPrefix))
-			if _, ok := obj.Tags[cat]; !ok {
-				obj.Tags[cat] = map[string]struct{}{}
-			}
-			for _, t := range strings.Split(p[1], propTagsOldSeparator) {
-				t = strings.TrimSpace(t)
-				if len(t) == 0 {
-					continue
-				}
-				set.Insert(obj.Tags[cat], t)
-			}
-		case strings.HasPrefix(p[0], propTags0Prefix):
-			cat := strings.TrimSpace(strings.TrimPrefix(p[0], propTags0Prefix))
-			if _, ok := obj.Tags[cat]; !ok {
-				obj.Tags[cat] = map[string]struct{}{}
-			}
-			for _, t := range strings.Split(p[1], propTags0Separator) {
-				t = strings.TrimSpace(t)
-				if len(t) == 0 {
-					continue
-				}
-				set.Insert(obj.Tags[cat], t)
-			}
-		default:
-			continue
-		}
-	}
-	log.Traceln("Current tags:", obj.Tags)
-	return obj, needsUpgrade, nil
+	return obj, nil
 }
 
 // TODO could use caching in case the repository has not changed. (Is this really possible if we also expect to read some values from the file system structure?)
@@ -561,7 +542,7 @@ func (r *Repo) List() ([]RepoObj, error) {
 		if strings.HasSuffix(e.Name(), repoPropertiesSuffix) {
 			continue
 		}
-		if obj, _, err := r.OpenObject(e.Name()); err == nil {
+		if obj, err := r.OpenObject(e.Name()); err == nil {
 			objects = append(objects, obj)
 		} else {
 			log.Infoln("Skipping", e.Name(), ": failed to open repo-object:", err.Error())

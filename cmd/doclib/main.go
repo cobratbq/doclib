@@ -19,7 +19,6 @@ import (
 	"github.com/cobratbq/doclib/internal/repo"
 	"github.com/cobratbq/goutils/assert"
 	"github.com/cobratbq/goutils/std/builtin"
-	"github.com/cobratbq/goutils/std/builtin/set"
 	"github.com/cobratbq/goutils/std/errors"
 	io_ "github.com/cobratbq/goutils/std/io"
 	"github.com/cobratbq/goutils/std/log"
@@ -136,7 +135,8 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 		}
 	})
 	btnOpenRepoLocation.Importance = widget.LowImportance
-	btnUpdate := widget.NewButtonWithIcon("Update", theme.ViewRefreshIcon(), nil)
+	// FIXME rename btnUpdate to btnCheck (now better reflects actual function)
+	btnUpdate := widget.NewButtonWithIcon("Check", theme.ViewRefreshIcon(), nil)
 	btnUpdate.OnTapped = func() {
 		updateStatus("Checking repository…", widget.MediumImportance)
 		btnUpdate.Disable()
@@ -156,9 +156,9 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 		for cat, tags := range viewmodel.tags {
 			for k, v := range tags {
 				if builtin.Expect(v.Get()) {
-					set.Insert(objects[idx].Tags[cat], k)
+					docrepo.Tag(cat, k, &objects[idx])
 				} else {
-					set.Remove(objects[idx].Tags[cat], k)
+					docrepo.Untag(cat, k, &objects[idx])
 				}
 			}
 		}
@@ -248,8 +248,7 @@ func constructUI(app fyne.App, parent fyne.Window, docrepo *repo.Repo) *fyne.Con
 			viewmodel.name.Set(objects[id].Name)
 			for cat, tags := range viewmodel.tags {
 				for k, v := range tags {
-					_, ok := objects[id].Tags[cat][k]
-					v.Set(ok)
+					v.Set(docrepo.Tagged(cat, k, &objects[id]))
 				}
 			}
 		}
